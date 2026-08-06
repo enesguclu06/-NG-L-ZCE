@@ -6,11 +6,12 @@ import { FlashCard } from '../components/review/FlashCard'
 import { Toast, useToast } from '../components/Toast'
 
 const MODE_OPTIONS = [
-  { key: 'default', label: '🎯 Varsayılan (Zor + Orta + Yeni)',  description: 'Kolay olarak işaretlenenler hariç' },
-  { key: 'hard',    label: '🔴 Sadece Zor kelimeler',            description: 'Çalışmaya devam etmen gerekenler' },
-  { key: 'medium',  label: '🟡 Sadece Orta kelimeler',           description: 'Biraz daha tekrar gerektirenler' },
-  { key: 'easy',    label: '🟢 Sadece Kolay kelimeler',          description: 'Öğrendiğin kelimeleri gözden geçir' },
-  { key: 'unrated', label: '⚪ Sadece Yeni kelimeler',           description: 'Henüz değerlendirilmemişler' },
+  { key: 'default',    label: '🎯 Varsayılan (Zor + Orta + Yeni)',  description: 'Kolay olarak işaretlenenler hariç' },
+  { key: 'hard_medium', label: '🔴🟡 Sadece Zor + Orta kelimeler',   description: 'Çalışmaya devam etmen gereken tüm kelimeler' },
+  { key: 'hard',       label: '🔴 Sadece Zor kelimeler',            description: 'Çalışmaya devam etmen gerekenler' },
+  { key: 'medium',     label: '🟡 Sadece Orta kelimeler',           description: 'Biraz daha tekrar gerektirenler' },
+  { key: 'easy',       label: '🟢 Sadece Kolay kelimeler',          description: 'Öğrendiğin kelimeleri gözden geçir' },
+  { key: 'unrated',    label: '⚪ Sadece Yeni kelimeler',           description: 'Henüz değerlendirilmemişler' },
 ]
 
 export default function ReviewPage() {
@@ -58,6 +59,8 @@ export default function ReviewPage() {
     for (const opt of MODE_OPTIONS) {
       if (opt.key === 'default') {
         counts[opt.key] = filteredWords.filter(w => w.difficulty !== 'easy').length
+      } else if (opt.key === 'hard_medium') {
+        counts[opt.key] = filteredWords.filter(w => w.difficulty === 'hard' || w.difficulty === 'medium').length
       } else {
         counts[opt.key] = filteredWords.filter(w => w.difficulty === opt.key).length
       }

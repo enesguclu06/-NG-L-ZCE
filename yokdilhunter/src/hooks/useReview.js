@@ -26,6 +26,10 @@ export function useReview(allWords, mode = 'default', category = 'all') {
     let filtered
     if (mode === 'default') {
       filtered = allWords.filter(w => w.difficulty !== 'easy')
+    } else if (mode === 'hard_medium') {
+      filtered = allWords.filter(w => w.difficulty === 'hard' || w.difficulty === 'medium')
+    } else if (mode === 'focus') {
+      filtered = allWords // already pre-filtered by FocusReviewPage
     } else {
       filtered = allWords.filter(w => w.difficulty === mode)
     }
