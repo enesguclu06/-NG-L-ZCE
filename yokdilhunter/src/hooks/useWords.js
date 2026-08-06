@@ -57,6 +57,7 @@ export function useWords() {
       turkish_translation: wordData.turkish_translation ?? null,
       synonyms: wordData.synonyms ?? [],
       definition: wordData.definition ?? null,
+      example_sentence: wordData.example_sentence ?? null,
       phonetic: wordData.phonetic ?? null,
       deck_id: wordData.deck_id || null,
       source_url: null, // reserved for Phase 2 extension

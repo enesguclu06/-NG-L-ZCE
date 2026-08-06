@@ -85,6 +85,7 @@ async function processAndSaveWord(text, tabId, url) {
       turkish_translation: data.turkish_translation,
       synonyms: data.synonyms,
       definition: data.definition,
+      example_sentence: data.example_sentence,
       phonetic: data.phonetic,
       source_url: url || null,
       difficulty: 'unrated'

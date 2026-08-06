@@ -29,6 +29,13 @@ export function FlashCard({ word, isFlipped, onFlip, onRate }) {
               <p className="text-slate-400 font-mono text-lg mb-6">{word.phonetic}</p>
             )}
 
+            {/* Example sentence on front */}
+            {word.example_sentence && (
+              <p className="text-slate-300 italic text-base px-6 mb-6">
+                "{word.example_sentence}"
+              </p>
+            )}
+
             {/* Tap hint */}
             <div className="flex items-center justify-center gap-2 mt-6">
               <div className="w-8 h-1 rounded-full bg-primary-500/40" />
@@ -56,6 +63,14 @@ export function FlashCard({ word, isFlipped, onFlip, onRate }) {
             <div className="mb-4">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Türkçe</p>
               <p className="text-primary-300 text-2xl font-bold">{word.turkish_translation}</p>
+            </div>
+          )}
+
+          {/* Example Sentence */}
+          {word.example_sentence && (
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Örnek</p>
+              <p className="text-slate-300 text-sm italic leading-relaxed">"{word.example_sentence}"</p>
             </div>
           )}
 

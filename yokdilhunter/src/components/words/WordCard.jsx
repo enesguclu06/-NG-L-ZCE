@@ -19,6 +19,7 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
     definition: word.definition ?? '',
     synonyms: (word.synonyms ?? []).join(', '),
     phonetic: word.phonetic ?? '',
+    example_sentence: word.example_sentence ?? '',
     deck_id: word.deck_id ?? '',
   })
   const [saving, setSaving] = useState(false)
@@ -41,6 +42,7 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
         definition: editForm.definition,
         synonyms: editForm.synonyms.split(',').map(s => s.trim()).filter(Boolean),
         phonetic: editForm.phonetic,
+        example_sentence: editForm.example_sentence,
         deck_id: editForm.deck_id || null,
       })
       setEditing(false)
@@ -135,6 +137,13 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
             onChange={e => setEditForm(f => ({ ...f, definition: e.target.value }))}
             placeholder="Tanım"
           />
+          <textarea
+            id={`edit-example-${word.id}`}
+            className="input-base text-sm resize-none min-h-[48px]"
+            value={editForm.example_sentence}
+            onChange={e => setEditForm(f => ({ ...f, example_sentence: e.target.value }))}
+            placeholder="Örnek Cümle"
+          />
           <input
             id={`edit-synonyms-${word.id}`}
             className="input-base text-sm"
@@ -172,6 +181,11 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
           )}
           {word.definition && (
             <p className="text-slate-400 text-sm leading-relaxed line-clamp-2">{word.definition}</p>
+          )}
+          {word.example_sentence && (
+            <p className="text-slate-300 italic text-sm border-l-2 border-white/10 pl-3 py-0.5 mt-2">
+              "{word.example_sentence}"
+            </p>
           )}
           {synonymsArr.length > 0 && (
             <div className="flex flex-wrap gap-1.5 pt-1">

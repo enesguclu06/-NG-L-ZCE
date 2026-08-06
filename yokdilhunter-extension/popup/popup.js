@@ -120,6 +120,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         li.appendChild(en);
         li.appendChild(tr);
+
+        if (w.example_sentence) {
+          const ex = document.createElement('div');
+          ex.style.fontSize = '11px';
+          ex.style.color = '#94A3B8';
+          ex.style.fontStyle = 'italic';
+          ex.style.marginTop = '4px';
+          ex.textContent = `"${w.example_sentence}"`;
+          li.appendChild(ex);
+        }
+
         wordList.appendChild(li);
       });
     } catch (err) {

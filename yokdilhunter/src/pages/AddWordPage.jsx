@@ -8,8 +8,8 @@ const EMPTY_FORM = {
   english_word: '',
   phonetic: '',
   definition: '',
-  synonyms: [],
   turkish_translation: '',
+  example_sentence: '',
   deck_id: '',
 }
 
@@ -48,6 +48,7 @@ export default function AddWordPage() {
         definition: result.definition ?? '',
         synonyms: result.synonyms ?? [],
         turkish_translation: result.turkish_translation ?? '',
+        example_sentence: result.example_sentence ?? '',
         deck_id: '',
       })
       setApiErrors(result.errors ?? [])
@@ -197,6 +198,16 @@ export default function AddWordPage() {
                 value={form.definition}
                 onChange={e => setForm(f => ({ ...f, definition: e.target.value }))}
                 placeholder="İngilizce tanım..."
+              />
+            </Field>
+
+            <Field label="Örnek Cümle" id="field-example">
+              <textarea
+                id="input-example"
+                className="input-base resize-none min-h-[60px]"
+                value={form.example_sentence}
+                onChange={e => setForm(f => ({ ...f, example_sentence: e.target.value }))}
+                placeholder="She flashed a quick, ephemeral smile."
               />
             </Field>
 

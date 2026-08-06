@@ -23,13 +23,15 @@ export async function fetchWordData(word) {
   // Dictionary API
   let phonetic = null
   let definition = null
+  let example_sentence = null
   let dictSynonyms = []
 
   if (dictResult.status === 'fulfilled') {
-    phonetic     = dictResult.value.phonetic   ?? null
+    phonetic         = dictResult.value.phonetic         ?? null
     // Prefer Wiktionary Turkish phonetic over raw IPA from dict API
-    definition   = dictResult.value.definition ?? null
-    dictSynonyms = dictResult.value.synonyms   ?? []
+    definition       = dictResult.value.definition       ?? null
+    example_sentence = dictResult.value.example_sentence ?? null
+    dictSynonyms     = dictResult.value.synonyms         ?? []
   }
   // Note: dict API errors are reported below, only if data is missing
 
@@ -41,9 +43,14 @@ export async function fetchWordData(word) {
     phonetic = phoneticResult.value
   }
 
-  // Wiktionary fallback for definition
-  if (!definition && wiktResult.status === 'fulfilled' && wiktResult.value) {
-    definition = wiktResult.value
+  // Wiktionary fallback for definition and example
+  if (wiktResult.status === 'fulfilled' && wiktResult.value) {
+    if (!definition && wiktResult.value.definition) {
+      definition = wiktResult.value.definition
+    }
+    if (!example_sentence && wiktResult.value.example_sentence) {
+      example_sentence = wiktResult.value.example_sentence
+    }
   }
 
   // Synonyms: Datamuse + dict merged
@@ -63,7 +70,7 @@ export async function fetchWordData(word) {
     errors.push(`Dictionary API: ${dictResult.reason?.message ?? 'Bulunamadı'}`)
   }
 
-  return { english_word: word.trim(), phonetic, definition, synonyms, turkish_translation, errors }
+  return { english_word: word.trim(), phonetic, definition, example_sentence, synonyms, turkish_translation, errors }
 }
 
 // ── Fetch with timeout ────────────────────────────────────────────────────────
@@ -116,8 +123,9 @@ async function fetchDictionaryData(word) {
     phonetic = entry.phonetics.find(p => p.text)?.text ?? null
   }
 
-  // Scan ALL meanings for best definition + synonyms
+  // Scan ALL meanings for best definition + synonyms + example
   let definition = null
+  let example_sentence = null
   const synSet = new Set()
 
   for (const meaning of (entry.meanings ?? [])) {
@@ -125,12 +133,15 @@ async function fetchDictionaryData(word) {
       if (!definition && def.definition?.trim().length > 5) {
         definition = stripHtml(def.definition.trim())
       }
+      if (!example_sentence && def.example?.trim().length > 5) {
+        example_sentence = stripHtml(def.example.trim())
+      }
       for (const s of (def.synonyms ?? [])) synSet.add(s)
     }
     for (const s of (meaning.synonyms ?? [])) synSet.add(s)
   }
 
-  return { phonetic, definition, synonyms: [...synSet].slice(0, 8) }
+  return { phonetic, definition, example_sentence, synonyms: [...synSet].slice(0, 8) }
 }
 
 // ── Wiktionary REST API — definition fallback ─────────────────────────────────
@@ -146,7 +157,13 @@ async function fetchWiktionaryDefinition(word) {
     for (const entry of (data?.en ?? [])) {
       for (const def of (entry.definitions ?? [])) {
         const text = stripHtml(def.definition ?? '')
-        if (text.length > 5) return text
+        let example_sentence = null
+        if (def.examples && def.examples.length > 0) {
+          example_sentence = stripHtml(def.examples[0] ?? '')
+        }
+        if (text.length > 5) {
+          return { definition: text, example_sentence }
+        }
       }
     }
     return null

@@ -29,6 +29,7 @@ export async function login(email, password) {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error_description || data.msg || 'Giriş başarısız');
 
+  data.created_at = Math.floor(Date.now() / 1000);
   await chrome.storage.local.set({ [STORAGE_KEY]: data });
   return data;
 }
