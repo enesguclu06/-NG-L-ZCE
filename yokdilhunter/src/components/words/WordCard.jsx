@@ -53,8 +53,16 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
     }
   }
 
+  async function handleQuickRate(newDiff) {
+    try {
+      await onUpdate(word.id, { difficulty: newDiff })
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   return (
-    <div className="glass rounded-2xl p-4 shadow-card hover:shadow-card-hover transition-shadow duration-300 animate-card-appear">
+    <div className="group glass rounded-2xl p-4 shadow-card hover:shadow-card-hover transition-shadow duration-300 animate-card-appear relative">
       {/* ── Header row ── */}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex-1 min-w-0">
@@ -78,6 +86,14 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
 
         {/* Actions */}
         <div className="flex items-center gap-1 shrink-0">
+          
+          {/* Quick Rate */}
+          <div className="flex opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity gap-1 mr-1">
+            <button onClick={() => handleQuickRate('easy')} className="w-6 h-6 flex items-center justify-center text-[10px] font-bold rounded bg-easy/10 text-easy hover:bg-easy/20 transition-colors" title="Kolay Yap">K</button>
+            <button onClick={() => handleQuickRate('medium')} className="w-6 h-6 flex items-center justify-center text-[10px] font-bold rounded bg-medium/10 text-medium hover:bg-medium/20 transition-colors" title="Orta Yap">O</button>
+            <button onClick={() => handleQuickRate('hard')} className="w-6 h-6 flex items-center justify-center text-[10px] font-bold rounded bg-hard/10 text-hard hover:bg-hard/20 transition-colors" title="Zor Yap">Z</button>
+          </div>
+
           <button
             id={`btn-edit-${word.id}`}
             onClick={() => { setEditing(e => !e); setShowDelete(false) }}
