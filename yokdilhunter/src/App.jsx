@@ -6,6 +6,7 @@ import AuthPage from './pages/AuthPage'
 import AddWordPage from './pages/AddWordPage'
 import LibraryPage from './pages/LibraryPage'
 import ReviewPage from './pages/ReviewPage'
+import DashboardPage from './pages/DashboardPage'
 
 /**
  * Protected route — redirects to /auth if user is not logged in.
@@ -53,6 +54,14 @@ export default function App() {
 
         {/* Protected */}
         <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/add"
           element={
             <ProtectedRoute>
@@ -78,8 +87,8 @@ export default function App() {
         />
 
         {/* Default redirect */}
-        <Route path="/" element={<Navigate to="/add" replace />} />
-        <Route path="*" element={<Navigate to="/add" replace />} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
   )

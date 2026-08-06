@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "YOKDILHUNTER",
+  "version": "1.0",
+  "description": "Seçilen İngilizce kelimeleri YOKDILHUNTER veritabanına kaydeder.",
+  "action": {
+    "default_popup": "popup/popup.html"
+  },
+  "icons": {
+    "128": "icons/icon-192.png"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.supabase.co/*",
+    "https://api.dictionaryapi.dev/*",
+    "https://corsproxy.io/*",
+    "https://api.allorigins.win/*",
+    "https://api.datamuse.com/*",
+    "https://api.mymemory.translated.net/*",
+    "https://en.wiktionary.org/*",
+    "https://translate.googleapis.com/*"
+  ],
+  "commands": {
+    "save-word": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Seçili metni YOKDILHUNTER'a kaydet"
+    }
+  }
+}

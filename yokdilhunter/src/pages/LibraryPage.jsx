@@ -88,7 +88,7 @@ export default function LibraryPage() {
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="input-base pl-10"
+          className="input-base !pl-11"
           placeholder="Kelime, çeviri veya eş anlamlı ara..."
         />
         {search && (
