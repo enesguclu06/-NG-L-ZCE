@@ -7,6 +7,9 @@ on:
   workflow_dispatch:
     # Manuel tetiklemek için GitHub Actions sekmesinden "Run workflow" butonuna basılabilir
 
+permissions:
+  contents: write
+
 jobs:
   backup:
     runs-on: ubuntu-latest
