@@ -8,25 +8,24 @@ on:
     # Manuel tetiklemek için GitHub Actions sekmesinden "Run workflow" butonuna basılabilir
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   backup:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📦 Repo'yu klonla
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: 📦 Private yedek reposunu klonla
+        run: |
+          git clone https://enesguclu06:${{ secrets.BACKUP_REPO_TOKEN }}@github.com/enesguclu06/yokdilhunter-backups.git backup-repo
 
-      - name: 🔄 Supabase'den verileri çek ve yedekle
+      - name: 🔄 Supabase'den verileri çek
         env:
           SUPABASE_URL: https://vovqngmllgbbfziarmqd.supabase.co
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           DATE=$(date +"%Y-%m-%d_%H-%M")
-          mkdir -p backups
+          mkdir -p backup-repo
 
           # words tablosunu çek
           curl -s \
@@ -34,7 +33,7 @@ jobs:
             -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
             -H "Accept: application/json" \
             "$SUPABASE_URL/rest/v1/words?select=*&limit=10000" \
-            -o "backups/words_$DATE.json"
+            -o "backup-repo/words_$DATE.json"
 
           # decks tablosunu çek
           curl -s \
@@ -42,14 +41,15 @@ jobs:
             -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
             -H "Accept: application/json" \
             "$SUPABASE_URL/rest/v1/decks?select=*&limit=10000" \
-            -o "backups/decks_$DATE.json"
+            -o "backup-repo/decks_$DATE.json"
 
           echo "✅ Yedek alındı: $DATE"
 
-      - name: 💾 Yedeği GitHub'a kaydet
+      - name: 💾 Yedeği private repoya kaydet
         run: |
+          cd backup-repo
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
-          git add backups/
+          git add .
           git diff --staged --quiet || git commit -m "🗄️ Otomatik yedek: $(date +"%Y-%m-%d %H:%M") UTC"
-          git push
+          git push https://enesguclu06:${{ secrets.BACKUP_REPO_TOKEN }}@github.com/enesguclu06/yokdilhunter-backups.git main
