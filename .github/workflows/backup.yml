@@ -1,0 +1,52 @@
+name: 🗄️ Supabase Otomatik Yedekleme
+
+on:
+  schedule:
+    # Her gece saat 03:00 (UTC) → Türkiye saatiyle 06:00
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    # Manuel tetiklemek için GitHub Actions sekmesinden "Run workflow" butonuna basılabilir
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📦 Repo'yu klonla
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🔄 Supabase'den verileri çek ve yedekle
+        env:
+          SUPABASE_URL: https://vovqngmllgbbfziarmqd.supabase.co
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          DATE=$(date +"%Y-%m-%d_%H-%M")
+          mkdir -p backups
+
+          # words tablosunu çek
+          curl -s \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Accept: application/json" \
+            "$SUPABASE_URL/rest/v1/words?select=*&limit=10000" \
+            -o "backups/words_$DATE.json"
+
+          # decks tablosunu çek
+          curl -s \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Accept: application/json" \
+            "$SUPABASE_URL/rest/v1/decks?select=*&limit=10000" \
+            -o "backups/decks_$DATE.json"
+
+          echo "✅ Yedek alındı: $DATE"
+
+      - name: 💾 Yedeği GitHub'a kaydet
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add backups/
+          git diff --staged --quiet || git commit -m "🗄️ Otomatik yedek: $(date +"%Y-%m-%d %H:%M") UTC"
+          git push
