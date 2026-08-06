@@ -58,6 +58,7 @@ export function useWords() {
       synonyms: wordData.synonyms ?? [],
       definition: wordData.definition ?? null,
       phonetic: wordData.phonetic ?? null,
+      category: wordData.category || null,
       source_url: null, // reserved for Phase 2 extension
       difficulty: 'unrated',
     }

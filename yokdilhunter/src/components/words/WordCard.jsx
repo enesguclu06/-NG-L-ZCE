@@ -60,9 +60,16 @@ export function WordCard({ word, onDelete, onUpdate }) {
               <span className="text-slate-500 text-xs font-mono shrink-0">{word.phonetic}</span>
             )}
           </div>
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${diff.cls}`}>
-            <span className="text-[8px]">⬤</span> {diff.label}
-          </span>
+          <div className="flex gap-2">
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${diff.cls}`}>
+              <span className="text-[8px]">⬤</span> {diff.label}
+            </span>
+            {word.category && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-accent-500/15 text-accent-300 border border-accent-500/30">
+                🏷️ {word.category}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Actions */}

@@ -15,6 +15,7 @@ export default function LibraryPage() {
   const { words, loading, error, fetchWords, deleteWord, updateWord } = useWords()
   const [search, setSearch] = useState('')
   const [diffFilter, setDiffFilter] = useState('all')
+  const [catFilter, setCatFilter] = useState('all')
   const { toast, showToast, clearToast } = useToast()
 
   useEffect(() => {
@@ -27,6 +28,13 @@ export default function LibraryPage() {
     if (diffFilter !== 'all') {
       list = list.filter(w => w.difficulty === diffFilter)
     }
+    if (catFilter !== 'all') {
+      if (catFilter === 'none') {
+        list = list.filter(w => !w.category)
+      } else {
+        list = list.filter(w => w.category === catFilter)
+      }
+    }
     if (search.trim()) {
       const q = search.toLowerCase()
       list = list.filter(w =>
@@ -36,7 +44,16 @@ export default function LibraryPage() {
       )
     }
     return list
-  }, [words, search, diffFilter])
+  }, [words, search, diffFilter, catFilter])
+
+  // Get unique categories for dropdown
+  const uniqueCategories = useMemo(() => {
+    const cats = new Set()
+    words.forEach(w => {
+      if (w.category) cats.add(w.category)
+    })
+    return Array.from(cats).sort()
+  }, [words])
 
   async function handleDelete(id) {
     try {
@@ -99,6 +116,21 @@ export default function LibraryPage() {
             ✕
           </button>
         )}
+      </div>
+
+      {/* ── Category Filter ── */}
+      <div className="mb-4 animate-fade-up">
+        <select
+          value={catFilter}
+          onChange={e => setCatFilter(e.target.value)}
+          className="input-base cursor-pointer appearance-none text-sm py-2"
+        >
+          <option value="all">Tüm Listeler</option>
+          <option value="none">Genel (Kategorisiz)</option>
+          {uniqueCategories.map(cat => (
+            <option key={cat} value={cat}>{cat}</option>
+          ))}
+        </select>
       </div>
 
       {/* ── Difficulty Filter Tabs ── */}

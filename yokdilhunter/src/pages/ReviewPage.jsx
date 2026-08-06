@@ -15,6 +15,7 @@ const MODE_OPTIONS = [
 export default function ReviewPage() {
   const { words, loading, fetchWords } = useWords()
   const [selectedMode, setSelectedMode] = useState('default')
+  const [selectedCategory, setSelectedCategory] = useState('all')
   const { toast, showToast, clearToast } = useToast()
 
   const {
@@ -23,7 +24,7 @@ export default function ReviewPage() {
     sessionResults, startSession,
     flip, rateDifficulty,
     restartSession, total, progress,
-  } = useReview(words, selectedMode)
+  } = useReview(words, selectedMode, selectedCategory)
 
   useEffect(() => {
     fetchWords()
@@ -39,15 +40,33 @@ export default function ReviewPage() {
 
   // Queue size preview per mode
   const modeCounts = useMemo(() => {
+    let filteredWords = words
+    if (selectedCategory !== 'all') {
+      if (selectedCategory === 'none') {
+        filteredWords = filteredWords.filter(w => !w.category)
+      } else {
+        filteredWords = filteredWords.filter(w => w.category === selectedCategory)
+      }
+    }
+
     const counts = {}
     for (const opt of MODE_OPTIONS) {
       if (opt.key === 'default') {
-        counts[opt.key] = words.filter(w => w.difficulty !== 'easy').length
+        counts[opt.key] = filteredWords.filter(w => w.difficulty !== 'easy').length
       } else {
-        counts[opt.key] = words.filter(w => w.difficulty === opt.key).length
+        counts[opt.key] = filteredWords.filter(w => w.difficulty === opt.key).length
       }
     }
     return counts
+  }, [words, selectedCategory])
+
+  // Get unique categories for dropdown
+  const uniqueCategories = useMemo(() => {
+    const cats = new Set()
+    words.forEach(w => {
+      if (w.category) cats.add(w.category)
+    })
+    return Array.from(cats).sort()
   }, [words])
 
   // ── Start Screen ──────────────────────────────────────────────
@@ -73,7 +92,27 @@ export default function ReviewPage() {
             <p className="text-slate-500 text-sm mt-1">"Ekle" sekmesinden kelime ekleyerek başla</p>
           </div>
         ) : (
-          <div className="space-y-3 animate-fade-up">
+          <div className="space-y-4 animate-fade-up">
+            
+            {/* Category Select */}
+            <div className="bg-base-800 rounded-2xl p-4 border border-white/[0.06]">
+              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                Hangi listeden çalışmak istiyorsun?
+              </label>
+              <select
+                value={selectedCategory}
+                onChange={e => setSelectedCategory(e.target.value)}
+                className="input-base cursor-pointer appearance-none text-sm w-full"
+              >
+                <option value="all">Tüm Kelimeler (Hepsi)</option>
+                <option value="none">Genel (Kategorisiz)</option>
+                {uniqueCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-3">
             {MODE_OPTIONS.map(({ key, label, description }) => {
               const count = modeCounts[key] ?? 0
               const isSelected = selectedMode === key
@@ -114,6 +153,7 @@ export default function ReviewPage() {
                 </button>
               )
             })}
+            </div>
 
             <button
               id="btn-start-review"

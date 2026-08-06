@@ -9,6 +9,7 @@ const EMPTY_FORM = {
   definition: '',
   synonyms: [],
   turkish_translation: '',
+  category: '',
 }
 
 export default function AddWordPage() {
@@ -41,6 +42,7 @@ export default function AddWordPage() {
         definition: result.definition ?? '',
         synonyms: result.synonyms ?? [],
         turkish_translation: result.turkish_translation ?? '',
+        category: '',
       })
       setApiErrors(result.errors ?? [])
     } catch (err) {
@@ -210,6 +212,24 @@ export default function AddWordPage() {
                 onChange={e => setForm(f => ({ ...f, phonetic: e.target.value }))}
                 placeholder="/ɪˈfem.ər.əl/"
               />
+            </Field>
+
+            <Field label="Kategori / Liste" id="field-category">
+              <select
+                id="input-category"
+                className="input-base cursor-pointer appearance-none"
+                value={form.category}
+                onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+              >
+                <option value="">Tüm Kelimeler (Kategorisiz)</option>
+                <option value="YDS">YDS</option>
+                <option value="YDT">YDT</option>
+                <option value="YÖKDİL">YÖKDİL</option>
+                <option value="TOEFL">TOEFL</option>
+                <option value="IELTS">IELTS</option>
+                <option value="Günlük">Günlük İngilizce</option>
+                <option value="Yazılım">Yazılım / IT</option>
+              </select>
             </Field>
           </div>
 
