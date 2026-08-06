@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useWords } from '../hooks/useWords'
+import { useDecks } from '../hooks/useDecks'
 import { WordCard } from '../components/words/WordCard'
 import { Toast, useToast } from '../components/Toast'
 
@@ -12,15 +13,19 @@ const DIFFICULTY_FILTERS = [
 ]
 
 export default function LibraryPage() {
-  const { words, loading, error, fetchWords, deleteWord, updateWord } = useWords()
+  const { words, loading: wordsLoading, error, fetchWords, deleteWord, updateWord } = useWords()
+  const { decks, fetchDecks, loading: decksLoading } = useDecks()
   const [search, setSearch] = useState('')
   const [diffFilter, setDiffFilter] = useState('all')
-  const [catFilter, setCatFilter] = useState('all')
+  const [catFilter, setCatFilter] = useState('all') // Actually deck_id filter
   const { toast, showToast, clearToast } = useToast()
+
+  const loading = wordsLoading || decksLoading
 
   useEffect(() => {
     fetchWords()
-  }, [fetchWords])
+    fetchDecks()
+  }, [fetchWords, fetchDecks])
 
   // ── Client-side filtering ──────────────────────────────────────
   const filtered = useMemo(() => {
@@ -30,9 +35,9 @@ export default function LibraryPage() {
     }
     if (catFilter !== 'all') {
       if (catFilter === 'none') {
-        list = list.filter(w => !w.category)
+        list = list.filter(w => !w.deck_id)
       } else {
-        list = list.filter(w => w.category === catFilter)
+        list = list.filter(w => w.deck_id === catFilter)
       }
     }
     if (search.trim()) {
@@ -46,14 +51,7 @@ export default function LibraryPage() {
     return list
   }, [words, search, diffFilter, catFilter])
 
-  // Get unique categories for dropdown
-  const uniqueCategories = useMemo(() => {
-    const cats = new Set()
-    words.forEach(w => {
-      if (w.category) cats.add(w.category)
-    })
-    return Array.from(cats).sort()
-  }, [words])
+  // We don't need uniqueCategories anymore, we have decks array.
 
   async function handleDelete(id) {
     try {
@@ -74,6 +72,43 @@ export default function LibraryPage() {
     }
   }
 
+  // ── CSV Dışa Aktar ─────────────────────────────────────────────
+  function handleExportCSV() {
+    if (words.length === 0) {
+      showToast('Dışa aktarılacak kelime yok.', 'info')
+      return
+    }
+
+    const headers = ['İngilizce Kelime', 'Türkçe Çeviri', 'Tanım', 'Eş Anlamlılar', 'Okunuş', 'Zorluk', 'Liste']
+    
+    const rows = words.map(w => {
+      const escape = (str) => `"${(str || '').toString().replace(/"/g, '""')}"`
+      return [
+        escape(w.english_word),
+        escape(w.turkish_translation),
+        escape(w.definition),
+        escape((w.synonyms || []).join(', ')),
+        escape(w.phonetic),
+        escape(w.difficulty),
+        escape(w.decks?.name || 'Kategorisiz')
+      ].join(',')
+    })
+
+    const csvContent = "\uFEFF" + [headers.join(','), ...rows].join('\n') // Added BOM for Excel UTF-8 support
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    
+    const link = document.createElement('a')
+    link.setAttribute('href', url)
+    link.setAttribute('download', `yokdilhunter_kelimeler_${new Date().toISOString().split('T')[0]}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+
+    showToast('Kelimeler CSV olarak indirildi!', 'success')
+  }
+
   // Counts per difficulty for badges
   const counts = useMemo(() => {
     return words.reduce((acc, w) => {
@@ -92,7 +127,18 @@ export default function LibraryPage() {
           <h2 className="text-2xl font-black text-white">Kütüphane</h2>
           <p className="text-slate-400 text-sm mt-0.5">{words.length} kelime kayıtlı</p>
         </div>
-        <div className="text-3xl">📚</div>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={handleExportCSV}
+            className="p-2 rounded-xl bg-base-800 border border-white/[0.06] text-slate-400 hover:text-white hover:bg-base-700 transition-colors"
+            title="CSV Olarak İndir"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+          </button>
+          <div className="text-3xl">📚</div>
+        </div>
       </div>
 
       {/* ── Search ── */}
@@ -127,8 +173,8 @@ export default function LibraryPage() {
         >
           <option value="all">Tüm Listeler</option>
           <option value="none">Genel (Kategorisiz)</option>
-          {uniqueCategories.map(cat => (
-            <option key={cat} value={cat}>{cat}</option>
+          {decks.map(deck => (
+            <option key={deck.id} value={deck.id}>{deck.name}</option>
           ))}
         </select>
       </div>
@@ -190,6 +236,7 @@ export default function LibraryPage() {
               word={word}
               onDelete={handleDelete}
               onUpdate={handleUpdate}
+              decks={decks}
             />
           ))}
         </div>

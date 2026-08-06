@@ -11,7 +11,7 @@ const DIFFICULTY_CONFIG = {
  * WordCard — displays a saved word in the Library view.
  * Supports edit mode (inline form) and delete confirmation.
  */
-export function WordCard({ word, onDelete, onUpdate }) {
+export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
   const [showDelete, setShowDelete] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({
@@ -19,6 +19,7 @@ export function WordCard({ word, onDelete, onUpdate }) {
     definition: word.definition ?? '',
     synonyms: (word.synonyms ?? []).join(', '),
     phonetic: word.phonetic ?? '',
+    deck_id: word.deck_id ?? '',
   })
   const [saving, setSaving] = useState(false)
 
@@ -40,6 +41,7 @@ export function WordCard({ word, onDelete, onUpdate }) {
         definition: editForm.definition,
         synonyms: editForm.synonyms.split(',').map(s => s.trim()).filter(Boolean),
         phonetic: editForm.phonetic,
+        deck_id: editForm.deck_id || null,
       })
       setEditing(false)
     } catch (e) {
@@ -64,9 +66,9 @@ export function WordCard({ word, onDelete, onUpdate }) {
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${diff.cls}`}>
               <span className="text-[8px]">⬤</span> {diff.label}
             </span>
-            {word.category && (
+            {word.decks?.name && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-accent-500/15 text-accent-300 border border-accent-500/30">
-                🏷️ {word.category}
+                🏷️ {word.decks.name}
               </span>
             )}
           </div>
@@ -140,6 +142,16 @@ export function WordCard({ word, onDelete, onUpdate }) {
             onChange={e => setEditForm(f => ({ ...f, synonyms: e.target.value }))}
             placeholder="Eş anlamlılar (virgülle)"
           />
+          <select
+            className="input-base text-sm cursor-pointer appearance-none"
+            value={editForm.deck_id}
+            onChange={e => setEditForm(f => ({ ...f, deck_id: e.target.value }))}
+          >
+            <option value="">Genel (Kategorisiz)</option>
+            {decks.map(d => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
           <div className="flex gap-2">
             <button onClick={() => setEditing(false)} className="btn-ghost flex-1 py-2 text-sm">İptal</button>
             <button

@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useWords } from '../hooks/useWords'
+import { useDecks } from '../hooks/useDecks'
 import { useReview } from '../hooks/useReview'
 import { FlashCard } from '../components/review/FlashCard'
 import { Toast, useToast } from '../components/Toast'
@@ -14,8 +15,11 @@ const MODE_OPTIONS = [
 
 export default function ReviewPage() {
   const { words, loading, fetchWords } = useWords()
+  const { decks, fetchDecks, createDeck } = useDecks()
   const [selectedMode, setSelectedMode] = useState('default')
-  const [selectedCategory, setSelectedCategory] = useState('all')
+  const [selectedCategory, setSelectedCategory] = useState('all') // Actually holds deck_id
+  const [newDeckName, setNewDeckName] = useState('')
+  const [creatingDeck, setCreatingDeck] = useState(false)
   const { toast, showToast, clearToast } = useToast()
 
   const {
@@ -28,7 +32,8 @@ export default function ReviewPage() {
 
   useEffect(() => {
     fetchWords()
-  }, [fetchWords])
+    fetchDecks()
+  }, [fetchWords, fetchDecks])
 
   async function handleRate(difficulty) {
     try {
@@ -43,9 +48,9 @@ export default function ReviewPage() {
     let filteredWords = words
     if (selectedCategory !== 'all') {
       if (selectedCategory === 'none') {
-        filteredWords = filteredWords.filter(w => !w.category)
+        filteredWords = filteredWords.filter(w => !w.deck_id)
       } else {
-        filteredWords = filteredWords.filter(w => w.category === selectedCategory)
+        filteredWords = filteredWords.filter(w => w.deck_id === selectedCategory)
       }
     }
 
@@ -60,14 +65,21 @@ export default function ReviewPage() {
     return counts
   }, [words, selectedCategory])
 
-  // Get unique categories for dropdown
-  const uniqueCategories = useMemo(() => {
-    const cats = new Set()
-    words.forEach(w => {
-      if (w.category) cats.add(w.category)
-    })
-    return Array.from(cats).sort()
-  }, [words])
+  async function handleCreateDeck(e) {
+    e.preventDefault()
+    if (!newDeckName.trim()) return
+    setCreatingDeck(true)
+    try {
+      const d = await createDeck(newDeckName.trim())
+      setNewDeckName('')
+      setSelectedCategory(d.id)
+      showToast(`"${d.name}" listesi oluşturuldu!`, 'success')
+    } catch (err) {
+      showToast('Liste oluşturulamadı: ' + err.message, 'error')
+    } finally {
+      setCreatingDeck(false)
+    }
+  }
 
   // ── Start Screen ──────────────────────────────────────────────
   if (!isStarted) {
@@ -94,22 +106,43 @@ export default function ReviewPage() {
         ) : (
           <div className="space-y-4 animate-fade-up">
             
-            {/* Category Select */}
-            <div className="bg-base-800 rounded-2xl p-4 border border-white/[0.06]">
-              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                Hangi listeden çalışmak istiyorsun?
-              </label>
-              <select
-                value={selectedCategory}
-                onChange={e => setSelectedCategory(e.target.value)}
-                className="input-base cursor-pointer appearance-none text-sm w-full"
-              >
-                <option value="all">Tüm Kelimeler (Hepsi)</option>
-                <option value="none">Genel (Kategorisiz)</option>
-                {uniqueCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
+            {/* Category Select & Create */}
+            <div className="bg-base-800 rounded-2xl p-5 border border-white/[0.06] space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                  Hangi listeden çalışmak istiyorsun?
+                </label>
+                <select
+                  value={selectedCategory}
+                  onChange={e => setSelectedCategory(e.target.value)}
+                  className="input-base cursor-pointer appearance-none text-sm w-full"
+                >
+                  <option value="all">Tüm Kelimeler (Hepsi)</option>
+                  <option value="none">Genel (Kategorisiz)</option>
+                  {decks.map(deck => (
+                    <option key={deck.id} value={deck.id}>{deck.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="h-px bg-white/[0.06]" />
+
+              <form onSubmit={handleCreateDeck} className="flex gap-2">
+                <input
+                  type="text"
+                  value={newDeckName}
+                  onChange={e => setNewDeckName(e.target.value)}
+                  placeholder="Yeni liste adı (örn: YDS)"
+                  className="input-base text-sm flex-1"
+                />
+                <button
+                  type="submit"
+                  disabled={creatingDeck || !newDeckName.trim()}
+                  className="btn-ghost shrink-0 px-4 text-sm"
+                >
+                  {creatingDeck ? '...' : '+ Oluştur'}
+                </button>
+              </form>
             </div>
 
             <div className="space-y-3">

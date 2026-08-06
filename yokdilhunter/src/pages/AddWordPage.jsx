@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { fetchWordData } from '../lib/api'
 import { useWords } from '../hooks/useWords'
+import { useDecks } from '../hooks/useDecks'
 import { Toast, useToast } from '../components/Toast'
 
 const EMPTY_FORM = {
@@ -9,7 +10,7 @@ const EMPTY_FORM = {
   definition: '',
   synonyms: [],
   turkish_translation: '',
-  category: '',
+  deck_id: '',
 }
 
 export default function AddWordPage() {
@@ -21,7 +22,12 @@ export default function AddWordPage() {
   const [saving, setSaving] = useState(false)
 
   const { addWord } = useWords()
+  const { decks, fetchDecks } = useDecks()
   const { toast, showToast, clearToast } = useToast()
+
+  useEffect(() => {
+    fetchDecks()
+  }, [fetchDecks])
 
   // ── Fetch word data from APIs ──────────────────────────────────
   async function handleSearch(e) {
@@ -42,7 +48,7 @@ export default function AddWordPage() {
         definition: result.definition ?? '',
         synonyms: result.synonyms ?? [],
         turkish_translation: result.turkish_translation ?? '',
-        category: '',
+        deck_id: '',
       })
       setApiErrors(result.errors ?? [])
     } catch (err) {
@@ -218,17 +224,13 @@ export default function AddWordPage() {
               <select
                 id="input-category"
                 className="input-base cursor-pointer appearance-none"
-                value={form.category}
-                onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                value={form.deck_id}
+                onChange={e => setForm(f => ({ ...f, deck_id: e.target.value }))}
               >
-                <option value="">Tüm Kelimeler (Kategorisiz)</option>
-                <option value="YDS">YDS</option>
-                <option value="YDT">YDT</option>
-                <option value="YÖKDİL">YÖKDİL</option>
-                <option value="TOEFL">TOEFL</option>
-                <option value="IELTS">IELTS</option>
-                <option value="Günlük">Günlük İngilizce</option>
-                <option value="Yazılım">Yazılım / IT</option>
+                <option value="">Tüm Kelimeler (Genel)</option>
+                {decks.map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
               </select>
             </Field>
           </div>

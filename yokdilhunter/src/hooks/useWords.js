@@ -20,7 +20,7 @@ export function useWords() {
     try {
       const { data, error: err } = await supabase
         .from('words')
-        .select('*')
+        .select('*, decks(name)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
 
@@ -58,7 +58,7 @@ export function useWords() {
       synonyms: wordData.synonyms ?? [],
       definition: wordData.definition ?? null,
       phonetic: wordData.phonetic ?? null,
-      category: wordData.category || null,
+      deck_id: wordData.deck_id || null,
       source_url: null, // reserved for Phase 2 extension
       difficulty: 'unrated',
     }

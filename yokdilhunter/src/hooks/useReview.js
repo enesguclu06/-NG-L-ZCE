@@ -32,9 +32,9 @@ export function useReview(allWords, mode = 'default', category = 'all') {
 
     if (category !== 'all') {
       if (category === 'none') {
-        filtered = filtered.filter(w => !w.category)
+        filtered = filtered.filter(w => !w.deck_id)
       } else {
-        filtered = filtered.filter(w => w.category === category)
+        filtered = filtered.filter(w => w.deck_id === category)
       }
     }
 
