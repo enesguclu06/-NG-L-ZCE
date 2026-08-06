@@ -1,0 +1,123 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Custom CSS Variables ──────────────────────────────────────── */
+:root {
+  --nav-height: 72px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ── Base Reset ────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  @apply bg-base-900 text-slate-100 font-sans;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Scrollbar Styling ─────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-base-600 rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-primary-500; }
+
+/* ── 3D Flip Card ──────────────────────────────────────────────── */
+.flip-card { perspective: 1200px; }
+.flip-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+.flip-card-inner.flipped { transform: rotateY(180deg); }
+.flip-card-front,
+.flip-card-back {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 1.25rem;
+}
+.flip-card-back { transform: rotateY(180deg); }
+
+/* ── Glassmorphism Card ────────────────────────────────────────── */
+.glass {
+  @apply bg-base-800 border border-white/[0.06] backdrop-blur-sm;
+}
+
+/* ── Gradient Text ─────────────────────────────────────────────── */
+.gradient-text {
+  @apply bg-gradient-to-r from-primary-300 via-accent-300 to-primary-400 bg-clip-text text-transparent;
+}
+
+/* ── Difficulty Pill ───────────────────────────────────────────── */
+.badge-easy    { @apply bg-easy/15 text-easy border border-easy/30; }
+.badge-medium  { @apply bg-medium/15 text-medium border border-medium/30; }
+.badge-hard    { @apply bg-hard/15 text-hard border border-hard/30; }
+.badge-unrated { @apply bg-unrated/15 text-unrated border border-unrated/30; }
+
+/* ── Input base ────────────────────────────────────────────────── */
+.input-base {
+  @apply w-full bg-base-700 border border-white/10 rounded-xl px-4 py-3 text-slate-100 
+         placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50
+         focus:border-primary-500/50 transition-all duration-200;
+}
+
+/* ── Button variants ───────────────────────────────────────────── */
+.btn-primary {
+  @apply bg-primary-500 hover:bg-primary-400 active:bg-primary-600
+         text-white font-semibold rounded-xl px-6 py-3 transition-all duration-200
+         disabled:opacity-50 disabled:cursor-not-allowed shadow-glow-primary
+         hover:shadow-glow-primary hover:scale-[1.02] active:scale-[0.98];
+}
+.btn-ghost {
+  @apply bg-white/5 hover:bg-white/10 active:bg-white/[0.03] border border-white/10
+         text-slate-300 hover:text-white font-medium rounded-xl px-6 py-3
+         transition-all duration-200 hover:scale-[1.02] active:scale-[0.98];
+}
+.btn-danger {
+  @apply bg-hard/20 hover:bg-hard/30 border border-hard/30 text-hard
+         font-medium rounded-xl px-4 py-2 transition-all duration-200
+         hover:scale-[1.02] active:scale-[0.98];
+}
+.btn-easy   { @apply bg-easy/20 hover:bg-easy/30 border border-easy/40 text-easy font-semibold rounded-xl px-6 py-3 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]; }
+.btn-medium { @apply bg-medium/20 hover:bg-medium/30 border border-medium/40 text-medium font-semibold rounded-xl px-6 py-3 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]; }
+.btn-hard   { @apply bg-hard/20 hover:bg-hard/30 border border-hard/40 text-hard font-semibold rounded-xl px-6 py-3 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]; }
+
+/* ── Progress bar ──────────────────────────────────────────────── */
+.progress-bar {
+  @apply h-1.5 bg-base-700 rounded-full overflow-hidden;
+}
+.progress-fill {
+  @apply h-full bg-gradient-to-r from-primary-500 to-accent-400 rounded-full transition-all duration-500;
+}
+
+/* ── Toast ─────────────────────────────────────────────────────── */
+.toast {
+  @apply fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl
+         font-medium text-sm shadow-card-hover animate-slide-up;
+}
+.toast-success { @apply bg-easy/20 text-easy border border-easy/30; }
+.toast-error   { @apply bg-hard/20 text-hard border border-hard/30; }
+.toast-info    { @apply bg-primary-500/20 text-primary-300 border border-primary-500/30; }
+
+/* ── Safe area padding for bottom nav ─────────────────────────── */
+.pb-nav { padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 1rem); }
