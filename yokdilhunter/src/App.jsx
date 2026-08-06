@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { supabase } from './lib/supabase'
 import { useAuthStore } from './store/authStore'
 import { Layout } from './components/layout/Layout'
 import AuthPage from './pages/AuthPage'
@@ -7,6 +8,31 @@ import AddWordPage from './pages/AddWordPage'
 import LibraryPage from './pages/LibraryPage'
 import ReviewPage from './pages/ReviewPage'
 import DashboardPage from './pages/DashboardPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
+
+/**
+ * Listens for Supabase auth events (like PASSWORD_RECOVERY) and handles routing.
+ */
+function AuthRedirector() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        navigate('/reset-password')
+      }
+    })
+
+    // Fallback check on load
+    if (window.location.hash.includes('type=recovery')) {
+      navigate('/reset-password')
+    }
+
+    return () => subscription?.unsubscribe()
+  }, [navigate])
+
+  return null
+}
 
 /**
  * Protected route — redirects to /auth if user is not logged in.
@@ -48,9 +74,11 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <AuthRedirector />
       <Routes>
         {/* Public */}
         <Route path="/auth" element={<AuthPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
         {/* Protected */}
         <Route

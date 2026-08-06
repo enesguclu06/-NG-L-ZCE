@@ -25,5 +25,17 @@ export function useAuth() {
     if (error) throw error
   }
 
-  return { user, loading, signUp, signIn, signOut }
+  async function resetPassword(email) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    if (error) throw error
+  }
+
+  async function updatePassword(newPassword) {
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    if (error) throw error
+  }
+
+  return { user, loading, signUp, signIn, signOut, resetPassword, updatePassword }
 }

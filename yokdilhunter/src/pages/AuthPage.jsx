@@ -9,8 +9,9 @@ export default function AuthPage() {
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [signupDone, setSignupDone] = useState(false)
+  const [resetDone, setResetDone] = useState(false)
 
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, resetPassword } = useAuth()
   const navigate = useNavigate()
   const { toast, showToast, clearToast } = useToast()
 
@@ -20,7 +21,11 @@ export default function AuthPage() {
     setSubmitting(true)
 
     try {
-      if (mode === 'login') {
+      if (mode === 'forgot_password') {
+        await resetPassword(email)
+        setResetDone(true)
+        showToast('Şifre sıfırlama bağlantısı e-postanıza gönderildi.', 'success')
+      } else if (mode === 'login') {
         await signIn(email, password)
         navigate('/add')
       } else {
@@ -35,7 +40,7 @@ export default function AuthPage() {
     }
   }
 
-  if (signupDone) {
+  if (signupDone || resetDone) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-base-900 px-4">
         <Toast {...toast} onClose={clearToast} />
@@ -43,15 +48,17 @@ export default function AuthPage() {
           <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-easy/20 border border-easy/30 flex items-center justify-center">
             <span className="text-3xl">📬</span>
           </div>
-          <h2 className="text-xl font-bold text-white mb-2">E-postanı Onayla</h2>
+          <h2 className="text-xl font-bold text-white mb-2">
+            {signupDone ? 'E-postanı Onayla' : 'E-postanı Kontrol Et'}
+          </h2>
           <p className="text-slate-400 text-sm mb-6">
-            <strong className="text-slate-200">{email}</strong> adresine bir onay bağlantısı gönderdik.
-            Bağlantıya tıkladıktan sonra giriş yapabilirsin.
+            <strong className="text-slate-200">{email}</strong> adresine bir {signupDone ? 'onay bağlantısı' : 'şifre sıfırlama bağlantısı'} gönderdik.
+            Bağlantıya tıkladıktan sonra işleminize devam edebilirsiniz.
           </p>
           <button
             id="btn-go-to-login"
             className="btn-primary w-full"
-            onClick={() => { setSignupDone(false); setMode('login') }}
+            onClick={() => { setSignupDone(false); setResetDone(false); setMode('login') }}
           >
             Giriş Sayfasına Git
           </button>
@@ -88,24 +95,33 @@ export default function AuthPage() {
         {/* ── Auth Card ── */}
         <div className="glass rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-card animate-card-appear">
           {/* Tab toggle */}
-          <div className="flex bg-base-900 rounded-2xl p-1 mb-6">
-            <button
-              id="tab-login"
-              onClick={() => setMode('login')}
-              className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all duration-200
-                ${mode === 'login' ? 'bg-primary-500 text-white shadow-glow-primary' : 'text-slate-400 hover:text-slate-200'}`}
-            >
-              Giriş Yap
-            </button>
-            <button
-              id="tab-signup"
-              onClick={() => setMode('signup')}
-              className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all duration-200
-                ${mode === 'signup' ? 'bg-primary-500 text-white shadow-glow-primary' : 'text-slate-400 hover:text-slate-200'}`}
-            >
-              Kayıt Ol
-            </button>
-          </div>
+          {mode !== 'forgot_password' && (
+            <div className="flex bg-base-900 rounded-2xl p-1 mb-6">
+              <button
+                id="tab-login"
+                onClick={() => setMode('login')}
+                className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all duration-200
+                  ${mode === 'login' ? 'bg-primary-500 text-white shadow-glow-primary' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Giriş Yap
+              </button>
+              <button
+                id="tab-signup"
+                onClick={() => setMode('signup')}
+                className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all duration-200
+                  ${mode === 'signup' ? 'bg-primary-500 text-white shadow-glow-primary' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Kayıt Ol
+              </button>
+            </div>
+          )}
+
+          {mode === 'forgot_password' && (
+            <div className="mb-6 text-center">
+              <h2 className="text-xl font-bold text-white">Şifremi Unuttum</h2>
+              <p className="text-slate-400 text-sm mt-1">E-posta adresini gir, sıfırlama linki gönderelim.</p>
+            </div>
+          )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -124,22 +140,33 @@ export default function AuthPage() {
                 autoComplete="email"
               />
             </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block">
-                Şifre
-              </label>
-              <input
-                id="input-password"
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="input-base"
-                placeholder={mode === 'signup' ? 'En az 6 karakter' : '••••••••'}
-                required
-                minLength={6}
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              />
-            </div>
+            {mode !== 'forgot_password' && (
+              <div>
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex justify-between">
+                  <span>Şifre</span>
+                  {mode === 'login' && (
+                    <button
+                      type="button"
+                      onClick={() => setMode('forgot_password')}
+                      className="text-primary-400 hover:text-primary-300 font-medium normal-case"
+                    >
+                      Şifremi unuttum
+                    </button>
+                  )}
+                </label>
+                <input
+                  id="input-password"
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="input-base"
+                  placeholder={mode === 'signup' ? 'En az 6 karakter' : '••••••••'}
+                  required={mode !== 'forgot_password'}
+                  minLength={6}
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                />
+              </div>
+            )}
 
             <button
               id="btn-auth-submit"
@@ -150,25 +177,38 @@ export default function AuthPage() {
               {submitting ? (
                 <span className="flex items-center justify-center gap-2">
                   <LoadingSpinner size="sm" />
-                  {mode === 'login' ? 'Giriş yapılıyor...' : 'Kayıt yapılıyor...'}
+                  {mode === 'login' ? 'Giriş yapılıyor...' : mode === 'forgot_password' ? 'Gönderiliyor...' : 'Kayıt yapılıyor...'}
                 </span>
               ) : (
-                mode === 'login' ? 'Giriş Yap' : 'Kayıt Ol'
+                mode === 'login' ? 'Giriş Yap' : mode === 'forgot_password' ? 'Sıfırlama Linki Gönder' : 'Kayıt Ol'
               )}
             </button>
           </form>
 
           {/* Switch mode link */}
-          <p className="text-center text-slate-500 text-sm mt-5">
-            {mode === 'login' ? 'Hesabın yok mu? ' : 'Zaten hesabın var mı? '}
-            <button
-              id="btn-toggle-mode"
-              onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-              className="text-primary-300 hover:text-primary-200 font-semibold transition-colors"
-            >
-              {mode === 'login' ? 'Kayıt Ol' : 'Giriş Yap'}
-            </button>
-          </p>
+          <div className="text-center text-slate-500 text-sm mt-5">
+            {mode === 'forgot_password' ? (
+              <button
+                type="button"
+                onClick={() => setMode('login')}
+                className="text-white font-semibold hover:text-primary-300 transition-colors"
+              >
+                Giriş Yap'a Dön
+              </button>
+            ) : (
+              <>
+                {mode === 'login' ? 'Hesabın yok mu? ' : 'Zaten hesabın var mı? '}
+                <button
+                  id="btn-toggle-mode"
+                  type="button"
+                  onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+                  className="text-white font-semibold hover:text-primary-300 transition-colors"
+                >
+                  {mode === 'login' ? 'Kayıt Ol' : 'Giriş Yap'}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
