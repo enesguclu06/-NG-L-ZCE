@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { playAudio } from '../../lib/audio'
 
 const DIFFICULTY_CONFIG = {
   unrated: { label: 'Değerlendirilmemiş', cls: 'badge-unrated', dot: '⬤' },
@@ -71,6 +72,16 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
             {word.phonetic && (
               <span className="text-slate-500 text-xs font-mono shrink-0">{word.phonetic}</span>
             )}
+            <button 
+              onClick={() => playAudio(word.english_word)}
+              className="text-slate-400 hover:text-primary-300 p-1 rounded-md hover:bg-primary-500/10 transition-colors shrink-0"
+              title="Dinle"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06Z" />
+                <path d="M15.932 7.757a.75.75 0 0 1 1.061 0 4.5 4.5 0 0 1 0 6.364.75.75 0 0 1-1.06-1.06 3 3 0 0 0 0-4.243.75.75 0 0 1 0-1.061Z" />
+              </svg>
+            </button>
           </div>
           <div className="flex gap-2">
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${diff.cls}`}>
