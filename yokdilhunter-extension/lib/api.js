@@ -20,44 +20,35 @@ export async function fetchWordData(word) {
     fetchTurkishPhonetic(trimmed),
   ])
 
-  // Dictionary API
   let phonetic = null
-  let definition = null
-  let example_sentence = null
+  let dictDefinition = null
+  let dictExample = null
   let dictSynonyms = []
 
   if (dictResult.status === 'fulfilled') {
-    phonetic         = dictResult.value.phonetic         ?? null
-    // Prefer Wiktionary Turkish phonetic over raw IPA from dict API
-    definition       = dictResult.value.definition       ?? null
-    example_sentence = dictResult.value.example_sentence ?? null
-    dictSynonyms     = dictResult.value.synonyms         ?? []
+    phonetic       = dictResult.value.phonetic         ?? null
+    dictDefinition = dictResult.value.definition      ?? null
+    dictExample    = dictResult.value.example_sentence ?? null
+    dictSynonyms   = dictResult.value.synonyms         ?? []
   }
-  // Note: dict API errors are reported below, only if data is missing
 
-  // Wiktionary Turkish phonetic — use as phonetic if dict API gave nothing
-  if (!phonetic && phoneticResult.status === 'fulfilled' && phoneticResult.value) {
-    phonetic = phoneticResult.value
-  } else if (phonetic && phoneticResult.status === 'fulfilled' && phoneticResult.value) {
-    // Also prefer the converted Turkish phonetic over raw IPA
+  if (phoneticResult.status === 'fulfilled' && phoneticResult.value) {
     phonetic = phoneticResult.value
   }
 
-  // Wiktionary fallback for definition and example
+  let wiktDefinition = null
+  let wiktExample = null
   if (wiktResult.status === 'fulfilled' && wiktResult.value) {
-    if (!definition && wiktResult.value.definition) {
-      definition = wiktResult.value.definition
-    }
-    if (!example_sentence && wiktResult.value.example_sentence) {
-      example_sentence = wiktResult.value.example_sentence
-    }
+    wiktDefinition = wiktResult.value.definition ?? null
+    wiktExample    = wiktResult.value.example_sentence ?? null
   }
 
-  // Synonyms: Datamuse + dict merged
+  const definition       = pickBestDefinition(dictDefinition, wiktDefinition)
+  const example_sentence = dictExample ?? wiktExample ?? null
+
   const datumuseSynonyms = datumuseResult.status === 'fulfilled' ? (datumuseResult.value ?? []) : []
   const synonyms = [...new Set([...datumuseSynonyms, ...dictSynonyms])].slice(0, 10)
 
-  // Translation
   let turkish_translation = null
   if (translationResult.status === 'fulfilled') {
     turkish_translation = translationResult.value
@@ -65,12 +56,21 @@ export async function fetchWordData(word) {
     errors.push(`Translation API: ${translationResult.reason?.message ?? 'Başarısız'}`)
   }
 
-  // Only warn about dict API if definition is still missing (not filled by fallbacks)
   if (dictResult.status !== 'fulfilled' && !definition) {
     errors.push(`Dictionary API: ${dictResult.reason?.message ?? 'Bulunamadı'}`)
   }
 
   return { english_word: word.trim(), phonetic, definition, example_sentence, synonyms, turkish_translation, errors }
+}
+
+function pickBestDefinition(a, b) {
+  if (!a && !b) return null
+  if (!a) return b
+  if (!b) return a
+  const clean = (s) => s.replace(/^[a-z]/, c => c.toUpperCase()).trim()
+  const scoreA = a.length + (a.match(/;|\(|\[/) ? 30 : 0)
+  const scoreB = b.length + (b.match(/;|\(|\[/) ? 30 : 0)
+  return clean(scoreA <= scoreB ? a : b)
 }
 
 // ── Fetch with timeout ────────────────────────────────────────────────────────
@@ -123,23 +123,42 @@ async function fetchDictionaryData(word) {
     phonetic = entry.phonetics.find(p => p.text)?.text ?? null
   }
 
-  // Scan ALL meanings for best definition + synonyms + example
-  let definition = null
-  let example_sentence = null
+  // Collect ALL definitions across all meanings, then pick the best one
+  const candidates = []
   const synSet = new Set()
 
   for (const meaning of (entry.meanings ?? [])) {
+    const pos = meaning.partOfSpeech ?? ''
     for (const def of (meaning.definitions ?? [])) {
-      if (!definition && def.definition?.trim().length > 5) {
-        definition = stripHtml(def.definition.trim())
-      }
-      if (!example_sentence && def.example?.trim().length > 5) {
-        example_sentence = stripHtml(def.example.trim())
+      const text = def.definition?.trim()
+      if (text && text.length > 10) {
+        candidates.push({
+          text: stripHtml(text),
+          pos,
+          example: def.example?.trim() ?? null
+        })
       }
       for (const s of (def.synonyms ?? [])) synSet.add(s)
     }
     for (const s of (meaning.synonyms ?? [])) synSet.add(s)
   }
+
+  // Score each candidate — prefer verb/adj, medium length, penalise short noun-list style
+  const scored = candidates.map(c => {
+    let score = 0
+    if (c.pos === 'verb')      score += 30
+    if (c.pos === 'adjective') score += 10
+    if (c.text.length >= 30 && c.text.length <= 200) score += 20
+    if (c.text.length < 20)   score -= 30
+    if (/;/.test(c.text))     score -= 15
+    if (/^[A-Z]/.test(c.text) && /[.!?]$/.test(c.text)) score += 10
+    return { ...c, score }
+  })
+  scored.sort((a, b) => b.score - a.score)
+
+  const best = scored[0] ?? null
+  const definition       = best?.text ?? null
+  const example_sentence = best?.example ? stripHtml(best.example) : null
 
   return { phonetic, definition, example_sentence, synonyms: [...synSet].slice(0, 8) }
 }
@@ -227,7 +246,7 @@ function isTransliteration(original, translated) {
 //   3. MyMemory
 // Returns up to 4 meanings as a comma-separated string.
 async function fetchTranslation(word) {
-  const collected = new Set()
+  const collected = []
 
   // All 3 in parallel
   const [googleResult, wiktTrResult, myMemoryResult] = await Promise.allSettled([
@@ -236,24 +255,49 @@ async function fetchTranslation(word) {
     fetchMyMemory(word),
   ])
 
-  // 1. Google Translate (primary + alternates)
+  // Helper: only short word/phrase translations (not sentences or verb conjugations)
+  const isValidTranslation = (t) => {
+    if (!t || typeof t !== 'string') return false
+    const trimmed = t.trim()
+    if (trimmed.length === 0 || trimmed.length > 50) return false
+    if (trimmed.split(/\s+/).length > 5) return false
+    if (trimmed.toLowerCase() === word.toLowerCase()) return false
+    if (isTransliteration(word, trimmed)) return false
+    // Reject Turkish conjugated verb forms with personal suffixes (sentence fragments)
+    // Note: base infinitive (-mak/-mek) and simple -yor are NOT rejected
+    if (/(?:sam|sem|s[ae]n|yorum|yorsun|yoruz|yorlar|d[ıi](?:m|n|k|lar)|m[ıi]?y[ıi]m|ince|[ae]lim)$/i.test(trimmed.split(/\s+/).pop() ?? '')) return false
+    return true
+  }
+
+  const addUnique = (t) => {
+    const trimmed = t?.trim()
+    if (!trimmed) return
+    const lower = trimmed.toLowerCase()
+    if (!collected.some(c => c.toLowerCase() === lower)) {
+      collected.push(trimmed)
+    }
+  }
+
+  // 1. Google Translate (primary + alternates) — highest priority
   if (googleResult.status === 'fulfilled') {
-    for (const t of googleResult.value) collected.add(t)
+    for (const t of googleResult.value) {
+      if (isValidTranslation(t)) addUnique(t)
+    }
   }
 
-  // 2. Wiktionary Turkish (usually best quality for common words)
+  // 2. Wiktionary Turkish (community-curated, high quality)
   if (wiktTrResult.status === 'fulfilled') {
-    for (const t of wiktTrResult.value) collected.add(t)
+    for (const t of wiktTrResult.value) {
+      if (isValidTranslation(t)) addUnique(t)
+    }
   }
 
-  // 3. MyMemory as additional source (now returns array)
-  if (myMemoryResult.status === 'fulfilled' && Array.isArray(myMemoryResult.value)) {
-    for (const t of myMemoryResult.value) collected.add(t)
+  // 3. MyMemory — only primary translation, not matches (matches often contain sentences)
+  if (myMemoryResult.status === 'fulfilled' && typeof myMemoryResult.value === 'string') {
+    if (isValidTranslation(myMemoryResult.value)) addUnique(myMemoryResult.value)
   }
 
-  const results = [...collected]
-    .filter(t => t && t.toLowerCase() !== word.toLowerCase() && !isTransliteration(word, t))
-    .slice(0, 4)
+  const results = collected.slice(0, 3)
 
   if (results.length === 0) {
     throw new Error('Otomatik çeviri bulunamadı — lütfen Türkçe karşılığını kendin gir')
@@ -281,8 +325,7 @@ async function fetchGoogleTranslate(word) {
   return all
 }
 
-// dict-chrome-ex: returns a proper dictionary response with terms[] per pos
-// Response: [ [{trans:"geniş",...}], "en", 1, [{pos:"adj",terms:["geniş","engin",...],...}] ]
+// dict-chrome-ex: primary + dict section (data[3]), filtered to short phrases only
 async function fetchGoogleDictClient(word) {
   const translations = []
   try {
@@ -292,13 +335,13 @@ async function fetchGoogleDictClient(word) {
 
     const data = await res.json()
 
-    // Primary: data[0][0].trans (dict-chrome-ex format uses objects, not arrays)
+    // Primary: data[0][0].trans
     const primaryTrans = data?.[0]?.[0]?.trans
     if (primaryTrans && typeof primaryTrans === 'string' && primaryTrans.trim().length > 0) {
       translations.push(primaryTrans.trim())
     }
 
-    // Dictionary section: data[3] = [ { pos:"adjective", terms:["geniş","engin",...] }, ... ]
+    // Dictionary section: data[3] — sentence fragments filtered by isValidTranslation
     const dictSection = data?.[3]
     if (Array.isArray(dictSection)) {
       for (const posEntry of dictSection) {
@@ -307,46 +350,46 @@ async function fetchGoogleDictClient(word) {
             if (typeof term === 'string' && term.trim().length > 0 && !translations.includes(term.trim())) {
               translations.push(term.trim())
             }
-            if (translations.length >= 8) break
+            if (translations.length >= 6) break
           }
         }
-        if (translations.length >= 8) break
+        if (translations.length >= 6) break
       }
     }
   } catch { /* silent */ }
   return translations
 }
 
-// gtx client with dt=at: alternates at data[5]
-// Response: [ [["geniş","vast",...]], null, "en", null, null, [[posGroup, [[alt,...],...]],...] ]
+// gtx client: primary + alternates for single words only
 async function fetchGoogleGtxClient(word) {
   const translations = []
   try {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=tr&dt=t&dt=at&q=${encodeURIComponent(word)}`
+    const isPhrase = word.includes(' ')
+    const url = isPhrase
+      ? `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=tr&dt=t&q=${encodeURIComponent(word)}`
+      : `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=tr&dt=t&dt=at&q=${encodeURIComponent(word)}`
     const res = await fetchWithTimeout(url, 5000)
     if (!res.ok) return translations
-
     const data = await res.json()
-
-    // Primary at data[0][0][0]
     const primary = data?.[0]?.[0]?.[0]
     if (primary && typeof primary === 'string' && primary.trim().length > 0) {
       translations.push(primary.trim())
     }
-
-    // Alternates at data[5]: [ [posOfSpeech, [[altWord, backTrans,...], ...], ...], ... ]
-    const altSection = data?.[5]
-    if (Array.isArray(altSection)) {
-      for (const posGroup of altSection) {
-        if (!Array.isArray(posGroup) || !Array.isArray(posGroup[1])) continue
-        for (const altEntry of posGroup[1]) {
-          const altWord = altEntry?.[0]
-          if (typeof altWord === 'string' && altWord.trim().length > 0 && !translations.includes(altWord.trim())) {
-            translations.push(altWord.trim())
+    if (!isPhrase) {
+      const altSection = data?.[5]
+      if (Array.isArray(altSection)) {
+        for (const posGroup of altSection) {
+          const alts = posGroup?.[2]
+          if (!Array.isArray(alts)) continue
+          for (const altEntry of alts) {
+            const altWord = altEntry?.[0]
+            if (typeof altWord === 'string' && altWord.trim().length > 0 && !translations.includes(altWord.trim())) {
+              translations.push(altWord.trim())
+            }
+            if (translations.length >= 6) break
           }
-          if (translations.length >= 8) break
+          if (translations.length >= 6) break
         }
-        if (translations.length >= 8) break
       }
     }
   } catch { /* silent */ }
@@ -354,39 +397,22 @@ async function fetchGoogleGtxClient(word) {
 }
 
 // ── MyMemory API ─────────────────────────────────────────────────────────────
-// Returns an array of translations found in matches[] (multiple sources)
+// Returns only the primary translation (matches[] often contains full sentences, skip them)
 async function fetchMyMemory(word) {
   try {
     const res = await fetchWithTimeout(
       `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|tr`,
       5000
     )
-    if (!res.ok) return []
+    if (!res.ok) return ''
     const data = await res.json()
-    if (data.responseStatus !== 200 && data.responseStatus !== '200') return []
+    if (data.responseStatus !== 200 && data.responseStatus !== '200') return ''
 
-    const results = []
-
-    // Primary result
-    const primary = data.responseData?.translatedText
-    if (primary && primary.toLowerCase() !== word.toLowerCase()) {
-      results.push(primary.trim())
-    }
-
-    // Additional unique translations from the matches array
-    if (Array.isArray(data.matches)) {
-      for (const match of data.matches) {
-        const t = match?.translation?.trim()
-        if (t && t.toLowerCase() !== word.toLowerCase() && !results.includes(t)) {
-          results.push(t)
-        }
-        if (results.length >= 4) break
-      }
-    }
-
-    return results
+    // Only use the primary translation — matches[] contains example sentence translations
+    const primary = data.responseData?.translatedText?.trim() ?? ''
+    return primary
   } catch {
-    return []
+    return ''
   }
 }
 
@@ -418,32 +444,22 @@ async function fetchWiktionaryTurkish(word) {
 
     if (!wikitext) return []
 
-    // Find the Translations section (between ====Translations==== and the next ====)
-    const transMatch = wikitext.match(/={3,4}Translations={3,4}([\s\S]*?)(?====[^=]|$)/)
-    if (!transMatch) return []
-
-    const translationsBlock = transMatch[1]
-
-    // Find the Turkish line: "* Turkish: {{t+|tr|geniş}}, {{t|tr|engin}}, ..."
-    const turkishLine = translationsBlock.match(/\* Turkish:([^\n]+)/)
-    if (!turkishLine) return []
-
-    // Extract all {{t|tr|word}} and {{t+|tr|word}} templates
-    // Template format: {{t+|tr|geniş}} or {{t+|tr|geniş|alt=...}} or {{t|tr|uçsuz bucaksız}}
+    // Scan the ENTIRE wikitext for ALL {{t|tr|...}} and {{t+|tr|...}} templates.
+    // Handles polysemous words like "run" with many {{trans-top}} blocks.
     const results = []
     const templateRegex = /\{\{t\+?\|tr\|([^|}\]]+)/g
     let match
-    while ((match = templateRegex.exec(turkishLine[1])) !== null) {
+    while ((match = templateRegex.exec(wikitext)) !== null) {
       const term = match[1].trim()
       if (term && term.length > 0 && !results.includes(term)) {
         results.push(term)
       }
-      if (results.length >= 5) break
+      if (results.length >= 8) break
     }
 
     return results
   } catch {
-    return []  // Silent failure — this is an optional enhancement
+    return []  // Silent failure
   }
 }
 
