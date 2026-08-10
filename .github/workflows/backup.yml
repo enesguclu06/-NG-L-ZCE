@@ -43,6 +43,14 @@ jobs:
             "$SUPABASE_URL/rest/v1/decks?select=*&limit=10000" \
             -o "backup-repo/decks_$DATE.json"
 
+          # profiles tablosunu çek
+          curl -s \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Accept: application/json" \
+            "$SUPABASE_URL/rest/v1/profiles?select=*&limit=10000" \
+            -o "backup-repo/profiles_$DATE.json"
+
           echo "✅ Yedek alındı: $DATE"
 
       - name: 💾 Yedeği private repoya kaydet
