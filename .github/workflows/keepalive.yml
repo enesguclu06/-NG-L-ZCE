@@ -1,0 +1,21 @@
+name: 🔄 Workflow Keepalive
+
+on:
+  schedule:
+    # Her 20 günde bir çalışır (GitHub 60 gün sonra disable eder, biz önce uyandırırız)
+    - cron: '0 0 */20 * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔄 Scheduled workflow'ları aktif tut
+        uses: gautamkrishnar/keepalive-workflow@v2
+        with:
+          # Commit atmadan, sadece GitHub API ile workflow'u aktif tutar
+          use_api: true
