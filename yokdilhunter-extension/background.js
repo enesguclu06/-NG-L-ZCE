@@ -88,7 +88,9 @@ async function processAndSaveWord(text, tabId, url) {
       example_sentence: data.example_sentence,
       phonetic: data.phonetic,
       source_url: url || null,
-      difficulty: 'unrated'
+      difficulty: 'unrated',
+      repetitions: 0,
+      ease_factor: 2.5
     });
 
     if (tabId) notify(tabId, `"${data.english_word}" başarıyla kaydedildi! ✅`);
