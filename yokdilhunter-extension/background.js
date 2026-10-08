@@ -1,5 +1,5 @@
 import { getSession, checkDuplicate, saveWord } from './lib/supabase.js';
-import { fetchWordData } from './lib/api.js';
+import { fetchWordData, fetchTranslation } from './lib/api.js';
 
 // ── Service Worker Initialization ─────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
@@ -132,9 +132,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "translate") {
-    // Quick translation-only (no save) for the tooltip
-    fetchWordData(message.word)
-      .then(data => sendResponse({ translation: data.turkish_translation }))
+    // Fast path: just fetch the Turkish translation (skips phonetics, English definitions, etc)
+    fetchTranslation(message.word)
+      .then(translation => sendResponse({ translation }))
       .catch(err => sendResponse({ error: err.message }));
     return true;
   }

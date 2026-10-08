@@ -245,7 +245,7 @@ function isTransliteration(original, translated) {
 //   2. Wiktionary Turkish translations (community-curated, high quality)
 //   3. MyMemory
 // Returns up to 4 meanings as a comma-separated string.
-async function fetchTranslation(word) {
+export async function fetchTranslation(word) {
   const collected = []
 
   // All 3 in parallel
