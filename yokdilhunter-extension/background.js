@@ -133,11 +133,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === "translate") {
     // Quick translation-only (no save) for the tooltip
-    import('./lib/api.js').then(({ fetchWordData }) => {
-      fetchWordData(message.word)
-        .then(data => sendResponse({ translation: data.turkish_translation }))
-        .catch(err => sendResponse({ error: err.message }));
-    });
+    fetchWordData(message.word)
+      .then(data => sendResponse({ translation: data.turkish_translation }))
+      .catch(err => sendResponse({ error: err.message }));
     return true;
   }
 });
