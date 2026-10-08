@@ -24,20 +24,27 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // ── Keyboard Command Handler ──────────────────────────────────────────────────
 chrome.commands.onCommand.addListener(async (command, tab) => {
   if (command === "save-word") {
+    if (!tab?.id) return;
+
     try {
-      // Inject script to get selection text if not triggered via context menu
-      const [{ result: selectedText }] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => window.getSelection().toString()
+      // Search ALL frames (iframes, shadow-dom hosts, etc.) for selected text
+      const frames = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: () => window.getSelection()?.toString()?.trim() ?? ''
       });
 
-      if (selectedText && selectedText.trim().length > 0) {
+      // Pick the first non-empty result across all frames
+      const selectedText = frames.map(f => f.result).find(r => r && r.length > 0) ?? '';
+
+      if (selectedText.length > 0) {
         await processAndSaveWord(selectedText, tab.id, tab.url);
       } else {
         notify(tab.id, "Önce kaydedilecek bir kelime seçmelisin! ❌");
       }
     } catch (err) {
       console.error("Failed to get selection:", err);
+      // Last resort: open the popup so user can type manually
+      try { chrome.action.openPopup(); } catch { /* ignore */ }
     }
   }
 });
