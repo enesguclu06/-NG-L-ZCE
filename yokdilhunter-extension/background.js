@@ -26,6 +26,20 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   if (command === "save-word") {
     if (!tab?.id) return;
 
+    // PDF pages block all script injection — open popup directly so user can paste/type
+    const isPdf = tab.url?.toLowerCase().endsWith('.pdf')
+      || tab.url?.startsWith('chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai') // Chrome PDF viewer
+      || tab.url?.startsWith('chrome://')
+      || tab.url?.startsWith('edge://')
+      || tab.url?.startsWith('about:');
+
+    if (isPdf) {
+      // Signal popup to open in "PDF mode" (auto-focus input, try clipboard)
+      await chrome.storage.session.set({ pdfMode: true });
+      try { chrome.action.openPopup(); } catch { /* openPopup may fail in some contexts */ }
+      return;
+    }
+
     try {
       // Search ALL frames (iframes, shadow-dom hosts, etc.) for selected text
       const frames = await chrome.scripting.executeScript({

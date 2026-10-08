@@ -24,6 +24,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     showLoginScreen();
   }
 
+  // ── PDF Mode: auto-fill from clipboard if opened via Ctrl+Shift+S on a PDF ──
+  const { pdfMode } = await chrome.storage.session.get('pdfMode');
+  if (pdfMode && session) {
+    await chrome.storage.session.remove('pdfMode');
+    try {
+      const text = await navigator.clipboard.readText();
+      const word = text?.trim().split(/\s+/).slice(0, 4).join(' '); // max 4 words
+      if (word && word.length > 0 && word.length < 60) {
+        manualWord.value = word;
+      }
+    } catch { /* clipboard permission denied — just focus empty input */ }
+    manualWord.focus();
+    manualWord.select();
+  }
+
   // ── Login Flow ─────────────────────────────────────────────────────────────
   loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
