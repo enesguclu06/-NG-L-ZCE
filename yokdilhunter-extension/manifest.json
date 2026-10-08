@@ -32,6 +32,13 @@
     "https://en.wiktionary.org/*",
     "https://translate.googleapis.com/*"
   ],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "commands": {
     "save-word": {
       "suggested_key": {

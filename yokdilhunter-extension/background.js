@@ -125,13 +125,23 @@ function validateClipboardWord(text) {
 // ── Message Listener (from popup or content) ──────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "manual_save") {
-    // Fire and forget, or handle async response
     processAndSaveWord(message.word, null, null)
       .then(result => sendResponse({ success: true, result }))
       .catch(err => sendResponse({ success: false, error: err.message }));
-    return true; // Keep message channel open for async response
+    return true;
+  }
+
+  if (message.action === "translate") {
+    // Quick translation-only (no save) for the tooltip
+    import('./lib/api.js').then(({ fetchWordData }) => {
+      fetchWordData(message.word)
+        .then(data => sendResponse({ translation: data.turkish_translation }))
+        .catch(err => sendResponse({ error: err.message }));
+    });
+    return true;
   }
 });
+
 
 // ── Core Save Logic ─────────────────────────────────────────────────────────
 async function processAndSaveWord(text, tabId, url) {
