@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
+import { isDueToday } from '../lib/spaced'
 import { useWords } from '../hooks/useWords'
 import { useDecks } from '../hooks/useDecks'
 import { useReview } from '../hooks/useReview'
@@ -6,8 +7,9 @@ import { FlashCard } from '../components/review/FlashCard'
 import { Toast, useToast } from '../components/Toast'
 
 const MODE_OPTIONS = [
+  { key: 'due',        label: '🗓️ Bugün Tekrar Et (Anki SM-2)',     description: 'Algoritmanın bugün için planladığı kelimeler', badge: 'Önerilen' },
   { key: 'default',    label: '🎯 Varsayılan (Zor + Orta + Yeni)',  description: 'Kolay olarak işaretlenenler hariç' },
-  { key: 'hard_medium', label: '🔴🟡 Sadece Zor + Orta kelimeler',   description: 'Çalışmaya devam etmen gereken tüm kelimeler' },
+  { key: 'hard_medium', label: '🔴🟡 Sadece Zor + Orta kelimeler',  description: 'Çalışmaya devam etmen gereken tüm kelimeler' },
   { key: 'hard',       label: '🔴 Sadece Zor kelimeler',            description: 'Çalışmaya devam etmen gerekenler' },
   { key: 'medium',     label: '🟡 Sadece Orta kelimeler',           description: 'Biraz daha tekrar gerektirenler' },
   { key: 'easy',       label: '🟢 Sadece Kolay kelimeler',          description: 'Öğrendiğin kelimeleri gözden geçir' },
@@ -57,7 +59,9 @@ export default function ReviewPage() {
 
     const counts = {}
     for (const opt of MODE_OPTIONS) {
-      if (opt.key === 'default') {
+      if (opt.key === 'due') {
+        counts[opt.key] = filteredWords.filter(isDueToday).length
+      } else if (opt.key === 'default') {
         counts[opt.key] = filteredWords.filter(w => w.difficulty !== 'easy').length
       } else if (opt.key === 'hard_medium') {
         counts[opt.key] = filteredWords.filter(w => w.difficulty === 'hard' || w.difficulty === 'medium').length
@@ -149,7 +153,7 @@ export default function ReviewPage() {
             </div>
 
             <div className="space-y-3">
-            {MODE_OPTIONS.map(({ key, label, description }) => {
+            {MODE_OPTIONS.map(({ key, label, description, badge }) => {
               const count = modeCounts[key] ?? 0
               const isSelected = selectedMode === key
               return (
@@ -166,9 +170,16 @@ export default function ReviewPage() {
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className={`font-semibold text-sm ${isSelected ? 'text-primary-300' : 'text-slate-200'}`}>
-                        {label}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className={`font-semibold text-sm ${isSelected ? 'text-primary-300' : 'text-slate-200'}`}>
+                          {label}
+                        </p>
+                        {badge && (
+                          <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                            {badge}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-slate-500 text-xs mt-0.5">{description}</p>
                     </div>
                     <div className="flex items-center gap-3">

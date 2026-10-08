@@ -18,7 +18,7 @@ export default function DashboardPage() {
 
     // To Review Today (next_review_date <= now)
     const now = new Date().toISOString()
-    const toReview = words.filter(w => w.next_review_date && w.next_review_date <= now).length
+    const toReview = words.filter(w => !w.next_review_at || new Date(w.next_review_at) <= new Date()).length
 
     // Weekly added (last 7 days)
     const sevenDaysAgo = new Date()

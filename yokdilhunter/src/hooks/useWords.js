@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
-import { getReviewUpdate } from '../lib/spaced'
+import { sm2Update } from '../lib/spaced'
 
 /**
  * Hook for all word CRUD operations.
@@ -101,9 +101,15 @@ export function useWords() {
     setWords(prev => prev.filter(w => w.id !== id))
   }, [])
 
-  // ── Update difficulty + review metadata after flashcard review ─
-  const updateAfterReview = useCallback(async (id, difficulty, currentReviewCount) => {
-    const updates = getReviewUpdate(difficulty, currentReviewCount)
+  // ── Update difficulty + review metadata after flashcard review (SM-2) ─
+  const updateAfterReview = useCallback(async (id, difficulty, word) => {
+    const updates = sm2Update(
+      difficulty,
+      word?.repetitions ?? 0,
+      word?.ease_factor ?? 2.5,
+      word?.interval_days ?? 1,
+      word?.review_count ?? 0,
+    )
     return updateWord(id, updates)
   }, [updateWord])
 

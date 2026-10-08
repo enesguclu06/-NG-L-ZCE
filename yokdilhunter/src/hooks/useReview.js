@@ -1,15 +1,17 @@
 import { useState, useCallback } from 'react'
 import { useWords } from './useWords'
+import { isDueToday } from '../lib/spaced'
 
 /**
  * Manages a flashcard review session.
  * Builds a queue from words, tracks progress, handles difficulty selection.
  *
  * @param {object[]} allWords - Full list of words from useWords
- * @param {'default'|'easy'|'medium'|'hard'|'unrated'} mode
+ * @param {'default'|'due'|'easy'|'medium'|'hard'|'unrated'} mode
  *   'default' = exclude 'easy' words (show unrated+medium+hard)
+ *   'due'     = only words due today (SM-2 spaced repetition filter)
  *   any other value = filter to that specific difficulty
- * @param {string} category - Category to filter by ('all', 'none', or specific category name)
+ * @param {string} category - Category to filter by ('all', 'none', or specific deck_id)
  */
 export function useReview(allWords, mode = 'default', category = 'all') {
   const { updateAfterReview } = useWords()
@@ -24,7 +26,11 @@ export function useReview(allWords, mode = 'default', category = 'all') {
   // ── Build & shuffle the review queue ─────────────────────────
   const startSession = useCallback(() => {
     let filtered
-    if (mode === 'default') {
+
+    if (mode === 'due') {
+      // SM-2: only words whose next_review_at <= now (or never reviewed)
+      filtered = allWords.filter(isDueToday)
+    } else if (mode === 'default') {
       filtered = allWords.filter(w => w.difficulty !== 'easy')
     } else if (mode === 'hard_medium') {
       filtered = allWords.filter(w => w.difficulty === 'hard' || w.difficulty === 'medium')
@@ -62,8 +68,8 @@ export function useReview(allWords, mode = 'default', category = 'all') {
   const rateDifficulty = useCallback(async (difficulty) => {
     if (!currentWord) return
 
-    // Update in database
-    await updateAfterReview(currentWord.id, difficulty, currentWord.review_count ?? 0)
+    // Pass full word object so SM-2 can use accumulated state
+    await updateAfterReview(currentWord.id, difficulty, currentWord)
 
     // Update session results
     setSessionResults(prev => ({
