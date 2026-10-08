@@ -26,17 +26,45 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   if (command === "save-word") {
     if (!tab?.id) return;
 
-    // PDF pages block all script injection — open popup directly so user can paste/type
+    // PDF / privileged pages block all script injection
     const isPdf = tab.url?.toLowerCase().endsWith('.pdf')
-      || tab.url?.startsWith('chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai') // Chrome PDF viewer
+      || tab.url?.startsWith('chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai')
       || tab.url?.startsWith('chrome://')
       || tab.url?.startsWith('edge://')
       || tab.url?.startsWith('about:');
 
     if (isPdf) {
-      // Signal popup to open in "PDF mode" (auto-focus input, try clipboard)
-      await chrome.storage.session.set({ pdfMode: true });
-      try { chrome.action.openPopup(); } catch { /* openPopup may fail in some contexts */ }
+      // Read clipboard via offscreen document (MV3 service workers can't access clipboard directly)
+      const clipText = await readClipboardViaOffscreen();
+      const word = validateClipboardWord(clipText);
+
+      if (!word) {
+        chrome.notifications.create('pdf-hint', {
+          type: 'basic',
+          iconUrl: '../icons/icon-192.png',
+          title: 'YOKDILHUNTER',
+          message: 'PDF\'de kelimeyi Ctrl+C ile kopyala, sonra Ctrl+Shift+S yap. ℹ️',
+        });
+        return;
+      }
+
+      // Save — no tabId (can't inject toast into PDF), use notification instead
+      try {
+        await processAndSaveWord(word, null, tab.url);
+        chrome.notifications.create('pdf-saved', {
+          type: 'basic',
+          iconUrl: '../icons/icon-192.png',
+          title: 'YOKDILHUNTER ✅',
+          message: `"${word}" kaydedildi!`,
+        });
+      } catch (err) {
+        chrome.notifications.create('pdf-error', {
+          type: 'basic',
+          iconUrl: '../icons/icon-192.png',
+          title: 'YOKDILHUNTER ❌',
+          message: err.message,
+        });
+      }
       return;
     }
 
@@ -57,11 +85,42 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
       }
     } catch (err) {
       console.error("Failed to get selection:", err);
-      // Last resort: open the popup so user can type manually
-      try { chrome.action.openPopup(); } catch { /* ignore */ }
+      notify(tab.id, "Seçim alınamadı — kelimeyi sağ tıkla ile kaydet. ❌");
     }
   }
 });
+
+// ── Clipboard via Offscreen Document (MV3) ────────────────────────────────────
+async function readClipboardViaOffscreen() {
+  try {
+    const existing = await chrome.offscreen.hasDocument();
+    if (!existing) {
+      await chrome.offscreen.createDocument({
+        url: chrome.runtime.getURL('offscreen.html'),
+        reasons: ['CLIPBOARD'],
+        justification: 'Read clipboard text to save selected word from PDF',
+      });
+    }
+    return await chrome.runtime.sendMessage({ action: 'read-clipboard' })
+      .then(r => r?.text ?? '');
+  } catch (e) {
+    console.error('Offscreen clipboard read failed:', e);
+    return '';
+  }
+}
+
+// ── Validate clipboard text as a saveable word ────────────────────────────────
+// Accept 1-4 word phrases made of letters (no SQL, numbers, special chars)
+function validateClipboardWord(text) {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  const words = trimmed.split(/\s+/);
+  if (words.length < 1 || words.length > 4) return null;
+  if (trimmed.length > 60) return null;
+  // Must contain only letters, hyphens, apostrophes (no SQL, numbers, symbols)
+  if (!/^[a-zA-ZğüşıöçĞÜŞİÖÇ\-'\s]+$/.test(trimmed)) return null;
+  return trimmed;
+}
 
 // ── Message Listener (from popup or content) ──────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

@@ -18,7 +18,9 @@
     "storage",
     "activeTab",
     "scripting",
-    "clipboardRead"
+    "clipboardRead",
+    "offscreen",
+    "notifications"
   ],
   "host_permissions": [
     "https://*.supabase.co/*",
