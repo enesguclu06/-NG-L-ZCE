@@ -30,7 +30,8 @@
     "https://api.datamuse.com/*",
     "https://api.mymemory.translated.net/*",
     "https://en.wiktionary.org/*",
-    "https://translate.googleapis.com/*"
+    "https://translate.googleapis.com/*",
+    "https://tatoeba.org/*"
   ],
   "content_scripts": [
     {

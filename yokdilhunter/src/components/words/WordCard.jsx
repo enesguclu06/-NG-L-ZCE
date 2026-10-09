@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { playAudio } from '../../lib/audio'
+import { fetchExampleSentence } from '../../lib/api'
 
 const DIFFICULTY_CONFIG = {
   unrated: { label: 'Değerlendirilmemiş', cls: 'badge-unrated', dot: '⬤' },
@@ -24,6 +25,26 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
     deck_id: word.deck_id ?? '',
   })
   const [saving, setSaving] = useState(false)
+  const [fetchingExample, setFetchingExample] = useState(false)
+
+  async function handleAutoFetchExample() {
+    if (fetchingExample) return
+    setFetchingExample(true)
+    try {
+      const sentence = await fetchExampleSentence(word.english_word)
+      if (sentence) {
+        if (editing) {
+          setEditForm(f => ({ ...f, example_sentence: sentence }))
+        } else {
+          await onUpdate(word.id, { example_sentence: sentence })
+        }
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setFetchingExample(false)
+    }
+  }
 
   const diff = DIFFICULTY_CONFIG[word.difficulty] ?? DIFFICULTY_CONFIG.unrated
 
@@ -164,13 +185,23 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
             onChange={e => setEditForm(f => ({ ...f, definition: e.target.value }))}
             placeholder="Tanım"
           />
-          <textarea
-            id={`edit-example-${word.id}`}
-            className="input-base text-sm resize-none min-h-[48px]"
-            value={editForm.example_sentence}
-            onChange={e => setEditForm(f => ({ ...f, example_sentence: e.target.value }))}
-            placeholder="Örnek Cümle"
-          />
+          <div className="relative">
+            <textarea
+              id={`edit-example-${word.id}`}
+              className="input-base text-sm resize-none min-h-[52px] pr-28"
+              value={editForm.example_sentence}
+              onChange={e => setEditForm(f => ({ ...f, example_sentence: e.target.value }))}
+              placeholder="Örnek Cümle"
+            />
+            <button
+              type="button"
+              onClick={handleAutoFetchExample}
+              disabled={fetchingExample}
+              className="absolute right-2 top-2 text-xs text-primary-400 hover:text-primary-300 bg-primary-500/10 hover:bg-primary-500/20 px-2 py-1 rounded border border-primary-500/20 transition-colors"
+            >
+              {fetchingExample ? '⏳ Aranıyor...' : '✨ Otomatik Getir'}
+            </button>
+          </div>
           <input
             id={`edit-synonyms-${word.id}`}
             className="input-base text-sm"
@@ -209,10 +240,26 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
           {word.definition && (
             <p className="text-slate-400 text-sm leading-relaxed line-clamp-2">{word.definition}</p>
           )}
-          {word.example_sentence && (
+          {word.example_sentence ? (
             <p className="text-slate-300 italic text-sm border-l-2 border-white/10 pl-3 py-0.5 mt-2">
               "{word.example_sentence}"
             </p>
+          ) : (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={handleAutoFetchExample}
+                disabled={fetchingExample}
+                className="inline-flex items-center gap-1.5 text-xs text-primary-400 hover:text-primary-300 bg-primary-500/10 hover:bg-primary-500/20 border border-primary-500/25 px-2.5 py-1 rounded-md transition-all shadow-sm"
+                title="Bu kelime için internetten örnek cümle bul ve karta kaydet"
+              >
+                {fetchingExample ? (
+                  <span>⏳ Örnek cümle bulunuyor...</span>
+                ) : (
+                  <span>✨ Örnek Cümle Ekle</span>
+                )}
+              </button>
+            </div>
           )}
           {synonymsArr.length > 0 && (
             <div className="flex flex-wrap gap-1.5 pt-1">

@@ -8,9 +8,13 @@ import { fetchTurkishPhonetic } from './phonetic.js'
  *   3. Datamuse API        → richer synonyms
  *   4. MyMemory + Google Translate informal API → Turkish translation
  */
-export async function fetchWordData(word) {
+export async function fetchWordData(word, contextSentence = null) {
   const trimmed = word.trim().toLowerCase()
   const errors = []
+
+  // If a context sentence was captured directly from the page, prioritize it
+  const hasValidContext = contextSentence && typeof contextSentence === 'string' && contextSentence.trim().length >= 10
+  const pageSentence = hasValidContext ? contextSentence.trim() : null
 
   const [dictResult, wiktResult, datumuseResult, translationResult, phoneticResult] = await Promise.allSettled([
     fetchDictionaryData(trimmed),
@@ -38,7 +42,7 @@ export async function fetchWordData(word) {
     phonetic = phoneticResult.value
   }
 
-  // Pick best definition: prefer shorter & simpler between dict and wikt
+  // Wiktionary definition
   let wiktDefinition = null
   let wiktExample = null
   if (wiktResult.status === 'fulfilled' && wiktResult.value) {
@@ -46,8 +50,63 @@ export async function fetchWordData(word) {
     wiktExample    = wiktResult.value.example_sentence ?? null
   }
 
-  const definition    = pickBestDefinition(dictDefinition, wiktDefinition)
-  const example_sentence = dictExample ?? wiktExample ?? null
+  let definition    = pickBestDefinition(dictDefinition, wiktDefinition)
+  let example_sentence = pageSentence ?? dictExample ?? wiktExample ?? null
+
+  // Check if definition is a grammatical inflection pointer (e.g. "third-person singular simple present indicative of presume")
+  const formRegex = /\b(?:third-person|simple past|past participle|present participle|plural|comparative|superlative|indicative|inflection|form) of (?:the )?(?:verb )?(?:noun )?(?:adjective )?([a-zA-Z-]+)/i
+  const isGrammaticalForm = definition && formRegex.test(definition)
+
+  let lemma = null
+  if (isGrammaticalForm) {
+    const m = definition.match(formRegex)
+    if (m && m[1] && m[1].toLowerCase() !== trimmed) {
+      lemma = m[1].toLowerCase()
+    }
+  }
+  if (!lemma && (!example_sentence || isGrammaticalForm)) {
+    lemma = detectLemma(trimmed)
+  }
+
+  // If an inflection lemma exists, query it to get base definition & example!
+  if (lemma && lemma !== trimmed) {
+    try {
+      const [lemmaDict, lemmaWikt] = await Promise.allSettled([
+        fetchDictionaryData(lemma),
+        fetchWiktionaryDefinition(lemma)
+      ])
+
+      const lDictDef = lemmaDict.status === 'fulfilled' ? lemmaDict.value?.definition : null
+      const lDictEx  = lemmaDict.status === 'fulfilled' ? lemmaDict.value?.example_sentence : null
+      const lWiktDef = lemmaWikt.status === 'fulfilled' ? lemmaWikt.value?.definition : null
+      const lWiktEx  = lemmaWikt.status === 'fulfilled' ? lemmaWikt.value?.example_sentence : null
+
+      if (isGrammaticalForm) {
+        const betterDef = pickBestDefinition(lDictDef, lWiktDef)
+        if (betterDef) definition = betterDef
+      }
+
+      if (!example_sentence) {
+        example_sentence = lDictEx ?? lWiktEx ?? null
+      }
+    } catch { /* silent */ }
+  }
+
+  // Multi-tier fallback for example sentence:
+  // 1. Tatoeba database (bilingual curated sentences)
+  if (!example_sentence) {
+    example_sentence = await fetchTatoebaSentence(trimmed, lemma)
+  }
+
+  // 2. MyMemory translation memory
+  if (!example_sentence) {
+    example_sentence = await fetchMyMemorySentence(trimmed, lemma)
+  }
+
+  // 3. Fallback sentence guarantee
+  if (!example_sentence) {
+    example_sentence = generateFallbackSentence(trimmed)
+  }
 
   // Synonyms: Datamuse + dict merged
   const datumuseSynonyms = datumuseResult.status === 'fulfilled' ? (datumuseResult.value ?? []) : []
@@ -489,5 +548,136 @@ async function fetchWiktionaryTurkish(word) {
   } catch {
     return []  // Silent failure
   }
+}
+
+// ── Tatoeba Sentence Search (with CORS fallback) ──────────────────────────────
+async function fetchTatoebaSentence(word, lemma = null) {
+  const queries = [word]
+  if (lemma && lemma !== word) queries.push(lemma)
+
+  for (const q of queries) {
+    const rawUrl = `https://tatoeba.org/en/api_v0/search?from=eng&query=${encodeURIComponent(q)}`
+    const urls = [
+      rawUrl,
+      `https://corsproxy.io/?${encodeURIComponent(rawUrl)}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`,
+    ]
+
+    for (const url of urls) {
+      try {
+        const res = await fetchWithTimeout(url, 3000)
+        if (!res.ok) continue
+        const data = await res.json()
+        const results = data?.results || []
+        const re = new RegExp(`\\b${q}\\b`, 'i')
+
+        const cleanMatch = results.find(r => {
+          const t = r.text?.trim() || ''
+          return re.test(t) && t.length >= 15 && t.length <= 220 && /^[A-Z]/.test(t) && /[.!?]$/.test(t)
+        }) || results.find(r => {
+          const t = r.text?.trim() || ''
+          return t.length >= 15 && t.length <= 220 && /^[A-Z]/.test(t) && /[.!?]$/.test(t)
+        })
+
+        if (cleanMatch?.text) return cleanMatch.text.trim()
+      } catch {
+        continue
+      }
+    }
+  }
+  return null
+}
+
+// ── MyMemory Translation Memory Example Sentence ──────────────────────────────
+async function fetchMyMemorySentence(word, lemma = null) {
+  const queries = [word]
+  if (lemma && lemma !== word) queries.push(lemma)
+
+  for (const q of queries) {
+    try {
+      const res = await fetchWithTimeout(
+        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=en|tr`,
+        3500
+      )
+      if (!res.ok) continue
+      const data = await res.json()
+      const matches = data?.matches || []
+      const re = new RegExp(`\\b${q}\\b`, 'i')
+
+      for (const m of matches) {
+        const seg = m.segment?.trim()
+        if (seg && re.test(seg) && seg.length >= 18 && seg.length <= 250 && /^[A-Z]/.test(seg) && /[.!?]$/.test(seg)) {
+          return seg
+        }
+      }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+// ── Simple Lemma Detection ────────────────────────────────────────────────────
+function detectLemma(word) {
+  if (word.endsWith('ies') && word.length > 4) return word.slice(0, -3) + 'y'
+  if (word.endsWith('ves') && word.length > 4) return word.slice(0, -3) + 'f'
+  if (word.endsWith('ses') || word.endsWith('zes') || word.endsWith('ches') || word.endsWith('shes') || word.endsWith('xes')) {
+    return word.slice(0, -2)
+  }
+  if (word.endsWith('s') && !word.endsWith('ss') && word.length > 3) return word.slice(0, -1)
+  if (word.endsWith('ed') && word.length > 4) {
+    return word.endsWith('eed') ? word.slice(0, -1) : word.slice(0, -2)
+  }
+  if (word.endsWith('ing') && word.length > 5) return word.slice(0, -3)
+  if (word.endsWith('er') && word.length > 4) return word.slice(0, -2)
+  if (word.endsWith('est') && word.length > 5) return word.slice(0, -3)
+  return null
+}
+
+// ── Fallback Sentence Generator ───────────────────────────────────────────────
+function generateFallbackSentence(word) {
+  return `The term "${word}" is frequently used in academic and general contexts.`
+}
+
+// ── Standalone Example Sentence Getter (for auto-healing / regenerating) ───────
+export async function fetchExampleSentence(word) {
+  const trimmed = word.trim().toLowerCase()
+  const [wikt, dict] = await Promise.allSettled([
+    fetchWiktionaryDefinition(trimmed),
+    fetchDictionaryData(trimmed)
+  ])
+
+  const wiktEx = wikt.status === 'fulfilled' ? wikt.value?.example_sentence : null
+  const dictEx = dict.status === 'fulfilled' ? dict.value?.example_sentence : null
+  if (wiktEx) return wiktEx
+  if (dictEx) return dictEx
+
+  const wiktDef = wikt.status === 'fulfilled' ? wikt.value?.definition : ''
+  const formRegex = /\b(?:third-person|simple past|past participle|present participle|plural|comparative|superlative|indicative|inflection|form) of (?:the )?(?:verb )?(?:noun )?(?:adjective )?([a-zA-Z-]+)/i
+  let lemma = null
+  if (wiktDef && formRegex.test(wiktDef)) {
+    const m = wiktDef.match(formRegex)
+    if (m && m[1] && m[1].toLowerCase() !== trimmed) lemma = m[1].toLowerCase()
+  }
+  if (!lemma) lemma = detectLemma(trimmed)
+
+  if (lemma && lemma !== trimmed) {
+    const [lWikt, lDict] = await Promise.allSettled([
+      fetchWiktionaryDefinition(lemma),
+      fetchDictionaryData(lemma)
+    ])
+    const lWiktEx = lWikt.status === 'fulfilled' ? lWikt.value?.example_sentence : null
+    const lDictEx = lDict.status === 'fulfilled' ? lDict.value?.example_sentence : null
+    if (lWiktEx) return lWiktEx
+    if (lDictEx) return lDictEx
+  }
+
+  const tat = await fetchTatoebaSentence(trimmed, lemma)
+  if (tat) return tat
+
+  const mym = await fetchMyMemorySentence(trimmed, lemma)
+  if (mym) return mym
+
+  return generateFallbackSentence(trimmed)
 }
 

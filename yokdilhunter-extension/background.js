@@ -14,9 +14,42 @@ chrome.runtime.onInstalled.addListener(() => {
 // ── Context Menu Click Handler ───────────────────────────────────────────────
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "save-to-yokdilhunter") {
-    const selectedText = info.selectionText;
+    const selectedText = info.selectionText?.trim();
     if (selectedText) {
-      await processAndSaveWord(selectedText, tab.id, tab.url);
+      let contextSentence = null;
+      if (tab?.id && !tab.url?.startsWith('chrome://') && !tab.url?.startsWith('edge://')) {
+        try {
+          const res = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: (word) => {
+              const sel = window.getSelection();
+              if (!sel || sel.rangeCount === 0) return null;
+              const range = sel.getRangeAt(0);
+              let node = range.commonAncestorContainer;
+              while (node && node.nodeType !== Node.ELEMENT_NODE) node = node.parentNode;
+              let el = node;
+              while (el && el !== document.body && !/^(P|DIV|LI|ARTICLE|SECTION|H[1-6]|BLOCKQUOTE|TD|TH)$/i.test(el.tagName)) {
+                if (el.parentNode) el = el.parentNode; else break;
+              }
+              const fullText = (el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+              const idx = fullText.toLowerCase().indexOf(word.toLowerCase());
+              if (idx === -1) return null;
+              let start = idx;
+              while (start > 0 && !/[.!?\n]/.test(fullText[start - 1])) start--;
+              let end = idx + word.length;
+              while (end < fullText.length) {
+                if (/[.!?\n]/.test(fullText[end])) { end++; break; }
+                end++;
+              }
+              const s = fullText.slice(start, end).replace(/^[^\w"'“‘«]+/, '').trim();
+              return (s.length >= 10 && s.length <= 350) ? s : null;
+            },
+            args: [selectedText]
+          });
+          contextSentence = res?.[0]?.result ?? null;
+        } catch { /* ignore */ }
+      }
+      await processAndSaveWord(selectedText, tab.id, tab.url, contextSentence);
     }
   }
 });
@@ -69,17 +102,42 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     }
 
     try {
-      // Search ALL frames (iframes, shadow-dom hosts, etc.) for selected text
+      // Search ALL frames (iframes, shadow-dom hosts, etc.) for selected text and surrounding sentence
       const frames = await chrome.scripting.executeScript({
         target: { tabId: tab.id, allFrames: true },
-        func: () => window.getSelection()?.toString()?.trim() ?? ''
+        func: () => {
+          const sel = window.getSelection();
+          const word = sel?.toString()?.trim() ?? '';
+          if (!word || sel.rangeCount === 0) return null;
+          const range = sel.getRangeAt(0);
+          let node = range.commonAncestorContainer;
+          while (node && node.nodeType !== Node.ELEMENT_NODE) node = node.parentNode;
+          let el = node;
+          while (el && el !== document.body && !/^(P|DIV|LI|ARTICLE|SECTION|H[1-6]|BLOCKQUOTE|TD|TH)$/i.test(el.tagName)) {
+            if (el.parentNode) el = el.parentNode; else break;
+          }
+          const fullText = (el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+          let sentence = null;
+          const idx = fullText.toLowerCase().indexOf(word.toLowerCase());
+          if (idx !== -1) {
+            let start = idx;
+            while (start > 0 && !/[.!?\n]/.test(fullText[start - 1])) start--;
+            let end = idx + word.length;
+            while (end < fullText.length) {
+              if (/[.!?\n]/.test(fullText[end])) { end++; break; }
+              end++;
+            }
+            const s = fullText.slice(start, end).replace(/^[^\w"'“‘«]+/, '').trim();
+            if (s.length >= 10 && s.length <= 350) sentence = s;
+          }
+          return { word, sentence };
+        }
       });
 
-      // Pick the first non-empty result across all frames
-      const selectedText = frames.map(f => f.result).find(r => r && r.length > 0) ?? '';
+      const match = frames.map(f => f.result).find(r => r && r.word && r.word.length > 0);
 
-      if (selectedText.length > 0) {
-        await processAndSaveWord(selectedText, tab.id, tab.url);
+      if (match) {
+        await processAndSaveWord(match.word, tab.id, tab.url, match.sentence);
       } else {
         notify(tab.id, "Önce kaydedilecek bir kelime seçmelisin! ❌");
       }
@@ -125,7 +183,7 @@ function validateClipboardWord(text) {
 // ── Message Listener (from popup or content) ──────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "manual_save") {
-    processAndSaveWord(message.word, null, null)
+    processAndSaveWord(message.word, null, null, message.context_sentence)
       .then(result => sendResponse({ success: true, result }))
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
@@ -142,7 +200,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 
 // ── Core Save Logic ─────────────────────────────────────────────────────────
-async function processAndSaveWord(text, tabId, url) {
+async function processAndSaveWord(text, tabId, url, contextSentence = null) {
   const word = text.trim().toLowerCase();
   
   if (word.split(' ').length > 4) {
@@ -164,8 +222,13 @@ async function processAndSaveWord(text, tabId, url) {
       throw new Error(`"${word}" zaten kütüphanende! 📚`);
     }
 
-    // Fetch definitions and translations
-    const data = await fetchWordData(word);
+    // Fetch definitions, translations and example sentences (with contextSentence if available)
+    const data = await fetchWordData(word, contextSentence);
+
+    // Prioritize the real page sentence if captured, otherwise fallback to enriched API sentence
+    const finalExampleSentence = (contextSentence && typeof contextSentence === 'string' && contextSentence.trim().length >= 10)
+      ? contextSentence.trim()
+      : data.example_sentence;
 
     // Save to Supabase
     await saveWord({
@@ -173,7 +236,7 @@ async function processAndSaveWord(text, tabId, url) {
       turkish_translation: data.turkish_translation,
       synonyms: data.synonyms,
       definition: data.definition,
-      example_sentence: data.example_sentence,
+      example_sentence: finalExampleSentence,
       phonetic: data.phonetic,
       source_url: url || null,
       difficulty: 'unrated',
@@ -182,7 +245,7 @@ async function processAndSaveWord(text, tabId, url) {
     });
 
     if (tabId) notify(tabId, `"${data.english_word}" başarıyla kaydedildi! ✅`);
-    return data;
+    return { ...data, example_sentence: finalExampleSentence };
   } catch (error) {
     if (tabId) notify(tabId, `${error.message}`);
     throw error;

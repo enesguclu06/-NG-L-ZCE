@@ -6,7 +6,67 @@
 let tooltip = null;
 let currentWord = '';
 
-// ── Helper: Extract word under cursor ────────────────────────────────────────
+// ── Helper: Extract surrounding sentence around range or text ───────────────
+function extractSentenceAroundRange(range, word) {
+  if (!range) return null;
+  try {
+    let node = range.commonAncestorContainer;
+    while (node && node.nodeType !== Node.ELEMENT_NODE) {
+      node = node.parentNode;
+    }
+    let el = node;
+    while (el && el !== document.body && !/^(P|DIV|LI|ARTICLE|SECTION|H[1-6]|BLOCKQUOTE|TD|TH)$/i.test(el.tagName)) {
+      if (el.parentNode) el = el.parentNode;
+      else break;
+    }
+    const fullText = (el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!fullText) return null;
+    return extractSentenceFromText(fullText, word);
+  } catch {
+    return null;
+  }
+}
+
+function extractSentenceFromText(fullText, word) {
+  if (!fullText || !word) return null;
+  const idx = fullText.toLowerCase().indexOf(word.toLowerCase());
+  if (idx === -1) return null;
+
+  const honorifics = /^(mr|mrs|ms|dr|prof|vs|etc|eg|ie)\.?$/i;
+  let start = idx;
+  while (start > 0) {
+    const prev = fullText[start - 1];
+    if (/[.!?\n]/.test(prev)) {
+      const beforeDot = fullText.slice(0, start - 1).trim().split(/\s+/).pop();
+      if (!honorifics.test(beforeDot)) {
+        break;
+      }
+    }
+    start--;
+  }
+
+  let end = idx + word.length;
+  while (end < fullText.length) {
+    const char = fullText[end];
+    if (/[.!?\n]/.test(char)) {
+      const beforeDot = fullText.slice(idx, end).trim().split(/\s+/).pop();
+      if (!honorifics.test(beforeDot)) {
+        end++;
+        break;
+      }
+    }
+    end++;
+  }
+
+  let sentence = fullText.slice(start, end).trim();
+  sentence = sentence.replace(/^[^\w"'“‘«]+/, '').trim();
+  if (sentence.length >= 10 && sentence.length <= 350) {
+    return sentence;
+  }
+  return null;
+}
+
+// ── Helper: Extract word & sentence under cursor ─────────────────────────────
 function extractWordFromEvent(e) {
   if (!document.caretRangeFromPoint) return null;
   const range = document.caretRangeFromPoint(e.clientX, e.clientY);
@@ -26,7 +86,8 @@ function extractWordFromEvent(e) {
   const word = extracted.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '');
 
   if (word && word.length >= 2 && word.length <= 60 && /^[a-zA-Z\s\-']+$/.test(word)) {
-    return word;
+    const sentence = extractSentenceAroundRange(range, word);
+    return { word, sentence };
   }
   return null;
 }
@@ -34,14 +95,14 @@ function extractWordFromEvent(e) {
 // ── Listen for Alt+LeftClick (Show Translation Tooltip) ──────────────────────
 document.addEventListener('click', (e) => {
   if (e.altKey && !e.shiftKey && !e.ctrlKey) {
-    const word = extractWordFromEvent(e);
-    if (word) {
+    const data = extractWordFromEvent(e);
+    if (data?.word) {
       e.preventDefault();
       e.stopPropagation();
       window.getSelection()?.removeAllRanges();
       
       const rect = { top: e.clientY - 15, left: e.clientX - 20, width: 40, height: 30 };
-      showTooltip(word, rect);
+      showTooltip(data.word, rect, data.sentence);
     }
   }
 }, true);
@@ -49,14 +110,18 @@ document.addEventListener('click', (e) => {
 // ── Listen for Alt+RightClick (Direct Save) ──────────────────────────────────
 document.addEventListener('contextmenu', (e) => {
   if (e.altKey && !e.shiftKey && !e.ctrlKey) {
-    const word = extractWordFromEvent(e);
-    if (word) {
+    const data = extractWordFromEvent(e);
+    if (data?.word) {
       e.preventDefault(); // Stop normal right-click menu
       e.stopPropagation();
       window.getSelection()?.removeAllRanges();
       
-      // Tell background to save instantly
-      chrome.runtime.sendMessage({ action: 'manual_save', word });
+      // Tell background to save instantly with the webpage sentence
+      chrome.runtime.sendMessage({
+        action: 'manual_save',
+        word: data.word,
+        context_sentence: data.sentence
+      });
     }
   }
 }, true);
@@ -80,7 +145,8 @@ document.addEventListener('mouseup', (e) => {
 
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
-    showTooltip(text, rect);
+    const sentence = extractSentenceAroundRange(range, text);
+    showTooltip(text, rect, sentence);
   }, 120);
 });
 
@@ -93,7 +159,7 @@ document.addEventListener('mousedown', (e) => {
 document.addEventListener('scroll', hideTooltip, { passive: true });
 
 // ── Show tooltip ───────────────────────────────────────────────────────────
-function showTooltip(word, rect) {
+function showTooltip(word, rect, contextSentence = null) {
   hideTooltip();
   currentWord = word;
 
@@ -145,7 +211,7 @@ function showTooltip(word, rect) {
       transEl.textContent = response.translation;
       transEl.classList.remove('ydh-loading');
       saveBtn.disabled = false;
-      saveBtn.addEventListener('click', () => saveWord(word, saveBtn));
+      saveBtn.addEventListener('click', () => saveWord(word, saveBtn, contextSentence));
     } else {
       transEl.textContent = response?.error || 'çeviri bulunamadı';
       transEl.classList.remove('ydh-loading');
@@ -155,11 +221,15 @@ function showTooltip(word, rect) {
 }
 
 // ── Save word ──────────────────────────────────────────────────────────────
-function saveWord(word, btn) {
+function saveWord(word, btn, contextSentence = null) {
   btn.disabled = true;
   btn.textContent = '⏳ Kaydediliyor...';
 
-  chrome.runtime.sendMessage({ action: 'manual_save', word }, (response) => {
+  chrome.runtime.sendMessage({
+    action: 'manual_save',
+    word,
+    context_sentence: contextSentence
+  }, (response) => {
     if (!tooltip) return;
     if (response?.success) {
       btn.textContent = '✅ Kaydedildi!';
