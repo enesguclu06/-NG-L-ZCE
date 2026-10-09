@@ -25,7 +25,12 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
   const startSession = useCallback(() => {
     let filtered
 
-    if (mode === 'due') {
+    if (mode === 'today') {
+      // Words added today (since midnight local time)
+      const todayStart = new Date()
+      todayStart.setHours(0, 0, 0, 0)
+      filtered = allWords.filter(w => new Date(w.created_at) >= todayStart)
+    } else if (mode === 'due') {
       // SM-2: only words whose next_review_at <= now (or never reviewed)
       filtered = allWords.filter(isDueToday)
     } else if (mode === 'default') {

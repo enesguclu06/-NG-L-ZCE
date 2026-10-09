@@ -7,7 +7,8 @@ import { FlashCard } from '../components/review/FlashCard'
 import { Toast, useToast } from '../components/Toast'
 
 const MODE_OPTIONS = [
-  { key: 'due',        label: '🗓️ Bugün Tekrar Et (Anki SM-2)',     description: 'Algoritmanın bugün için planladığı kelimeler', badge: 'Önerilen' },
+  { key: 'today',      label: '📅 Bugün Eklenenleri Tekrar Et',     description: 'Bugün eklediğin kelimeleri hemen çalış', badge: 'Yeni' },
+  { key: 'due',        label: '🗓️ Anki Tekrarı (SM-2)',             description: 'Algoritmanın bugün için planladığı kelimeler', badge: 'Önerilen' },
   { key: 'default',    label: '🎯 Varsayılan (Zor + Orta + Yeni)',  description: 'Kolay olarak işaretlenenler hariç' },
   { key: 'hard_medium', label: '🔴🟡 Sadece Zor + Orta kelimeler',  description: 'Çalışmaya devam etmen gereken tüm kelimeler' },
   { key: 'hard',       label: '🔴 Sadece Zor kelimeler',            description: 'Çalışmaya devam etmen gerekenler' },
@@ -57,9 +58,15 @@ export default function ReviewPage() {
       }
     }
 
+    // Start of today (midnight local time)
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+
     const counts = {}
     for (const opt of MODE_OPTIONS) {
-      if (opt.key === 'due') {
+      if (opt.key === 'today') {
+        counts[opt.key] = filteredWords.filter(w => new Date(w.created_at) >= todayStart).length
+      } else if (opt.key === 'due') {
         counts[opt.key] = filteredWords.filter(isDueToday).length
       } else if (opt.key === 'default') {
         counts[opt.key] = filteredWords.filter(w => w.difficulty !== 'easy').length
