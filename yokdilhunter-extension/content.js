@@ -72,6 +72,16 @@ function showTooltip(word, rect) {
 
   // Fetch translation from background
   chrome.runtime.sendMessage({ action: 'translate', word }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Translation error:', chrome.runtime.lastError);
+      if (!tooltip) return;
+      const transEl = tooltip.querySelector('.ydh-translation');
+      transEl.textContent = 'Hata: ' + chrome.runtime.lastError.message;
+      transEl.classList.remove('ydh-loading');
+      transEl.classList.add('ydh-error');
+      return;
+    }
+
     if (!tooltip) return;
     const transEl = tooltip.querySelector('.ydh-translation');
     const saveBtn = tooltip.querySelector('.ydh-save-btn');

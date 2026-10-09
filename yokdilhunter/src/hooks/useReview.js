@@ -1,5 +1,4 @@
 import { useState, useCallback } from 'react'
-import { useWords } from './useWords'
 import { isDueToday } from '../lib/spaced'
 
 /**
@@ -12,10 +11,9 @@ import { isDueToday } from '../lib/spaced'
  *   'due'     = only words due today (SM-2 spaced repetition filter)
  *   any other value = filter to that specific difficulty
  * @param {string} category - Category to filter by ('all', 'none', or specific deck_id)
+ * @param {function} updateAfterReview - SM-2 update function from useWords hook
  */
-export function useReview(allWords, mode = 'default', category = 'all') {
-  const { updateAfterReview } = useWords()
-
+export function useReview(allWords, mode = 'default', category = 'all', updateAfterReview) {
   const [queue, setQueue] = useState([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isFlipped, setIsFlipped] = useState(false)

@@ -17,7 +17,7 @@ const MODE_OPTIONS = [
 ]
 
 export default function ReviewPage() {
-  const { words, loading, fetchWords } = useWords()
+  const { words, loading, fetchWords, updateAfterReview } = useWords()
   const { decks, fetchDecks, createDeck } = useDecks()
   const [selectedMode, setSelectedMode] = useState('default')
   const [selectedCategory, setSelectedCategory] = useState('all') // Actually holds deck_id
@@ -31,7 +31,7 @@ export default function ReviewPage() {
     sessionResults, startSession,
     flip, rateDifficulty,
     restartSession, total, progress,
-  } = useReview(words, selectedMode, selectedCategory)
+  } = useReview(words, selectedMode, selectedCategory, updateAfterReview)
 
   useEffect(() => {
     fetchWords()

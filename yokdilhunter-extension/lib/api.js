@@ -158,7 +158,11 @@ async function fetchDictionaryData(word) {
 
   const best = scored[0] ?? null
   const definition       = best?.text ?? null
-  const example_sentence = best?.example ? stripHtml(best.example) : null
+  // If the best-scoring definition has no example, fall back to the first candidate that does
+  const exampleRaw = best?.example
+    ?? scored.find(c => c.example)?.example
+    ?? null
+  const example_sentence = exampleRaw ? stripHtml(exampleRaw) : null
 
   return { phonetic, definition, example_sentence, synonyms: [...synSet].slice(0, 8) }
 }

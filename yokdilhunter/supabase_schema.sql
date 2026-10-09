@@ -14,6 +14,7 @@ create table public.words (
   turkish_translation  text,
   synonyms             text[],
   definition           text,
+  example_sentence     text,        -- Example usage sentence from dictionary API
   phonetic             text,
   source_url           text,        -- reserved for Phase 2 (browser extension)
   difficulty           text        not null default 'unrated'
@@ -70,5 +71,6 @@ create policy "Users can delete their own words"
 -- ══════════════════════════════════════════════════════════════
 -- alter table public.words
 --   add column if not exists repetitions integer not null default 0,
---   add column if not exists ease_factor float   not null default 2.5;
+--   add column if not exists ease_factor float   not null default 2.5,
+--   add column if not exists example_sentence text;
 
