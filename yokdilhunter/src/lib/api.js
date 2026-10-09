@@ -184,17 +184,26 @@ async function fetchWiktionaryDefinition(word) {
     if (!res.ok) return null
 
     const data = await res.json()
+    let firstDefinition = null
+    let fallbackExample = null
+
     for (const entry of (data?.en ?? [])) {
       for (const def of (entry.definitions ?? [])) {
         const text = stripHtml(def.definition ?? '')
-        let example_sentence = null
+        let example = null
         if (def.examples && def.examples.length > 0) {
-          example_sentence = stripHtml(def.examples[0] ?? '')
+          example = stripHtml(def.examples[0] ?? '')
         }
+
         if (text.length > 5) {
-          return { definition: text, example_sentence }
+          if (!firstDefinition) firstDefinition = text
+          if (example && !fallbackExample) fallbackExample = example
         }
       }
+    }
+    
+    if (firstDefinition) {
+      return { definition: firstDefinition, example_sentence: fallbackExample }
     }
     return null
   } catch {
