@@ -18,7 +18,7 @@ const MODE_OPTIONS = [
 ]
 
 export default function ReviewPage() {
-  const { words, loading, fetchWords, updateAfterReview } = useWords()
+  const { words, loading, fetchWords, updateWord, updateAfterReview } = useWords()
   const { decks, fetchDecks, createDeck } = useDecks()
   const [selectedMode, setSelectedMode] = useState('default')
   const [selectedCategory, setSelectedCategory] = useState('all') // Actually holds deck_id
@@ -311,6 +311,7 @@ export default function ReviewPage() {
           onFlip={flip}
           onRate={handleRate}
           onSkip={skip}
+          onUpdateWord={updateWord}
         />
       )}
     </div>

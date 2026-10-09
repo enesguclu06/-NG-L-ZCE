@@ -1,4 +1,6 @@
+import { useState, useEffect } from 'react'
 import { playAudio } from '../../lib/audio'
+import { fetchExampleSentence } from '../../lib/api'
 
 /**
  * FlashCard — 3D flip card for review mode.
@@ -6,13 +8,38 @@ import { playAudio } from '../../lib/audio'
  * Front: English word + phonetic + tap prompt
  * Back:  Turkish translation + definition + synonyms + difficulty buttons
  */
-export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip }) {
+export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWord }) {
   const synonymsArr = Array.isArray(word.synonyms) ? word.synonyms : []
+  const [fetchingExample, setFetchingExample] = useState(false)
+  const [currentExample, setCurrentExample] = useState(word.example_sentence ?? '')
+
+  useEffect(() => {
+    setCurrentExample(word.example_sentence ?? '')
+  }, [word.id, word.example_sentence])
+
+  async function handleFetchExample(e) {
+    e?.stopPropagation()
+    if (fetchingExample) return
+    setFetchingExample(true)
+    try {
+      const sentence = await fetchExampleSentence(word.english_word)
+      if (sentence) {
+        setCurrentExample(sentence)
+        if (onUpdateWord) {
+          await onUpdateWord(word.id, { example_sentence: sentence })
+        }
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setFetchingExample(false)
+    }
+  }
 
   return (
     <div
       className="flip-card w-full"
-      style={{ height: 'min(480px, 60dvh)' }}
+      style={{ minHeight: '580px', height: 'min(720px, 82dvh)' }}
       onClick={!isFlipped ? onFlip : undefined}
     >
       <div className={`flip-card-inner ${isFlipped ? 'flipped' : ''}`}>
@@ -21,8 +48,8 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip }) {
           {/* Subtle glow on hover */}
           <div className="absolute inset-0 rounded-[1.25rem] bg-primary-500/0 group-hover:bg-primary-500/[0.03] transition-colors duration-300" />
 
-          <div className="text-center relative z-10">
-            {/* Word */}
+          <div className="text-center relative z-10 w-full max-w-lg">
+            {/* Word label */}
             <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-4">İngilizce</p>
             
             <div className="flex items-center justify-center gap-3 mb-3">
@@ -46,14 +73,14 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip }) {
             )}
 
             {/* Example sentence on front */}
-            {word.example_sentence && (
+            {currentExample && (
               <p className="text-slate-300 italic text-base px-6 mb-6">
-                "{word.example_sentence}"
+                "{currentExample}"
               </p>
             )}
 
             {/* Tap hint + Space hint */}
-            <div className="flex items-center justify-center gap-2 mt-6">
+            <div className="flex items-center justify-center gap-2 mt-8">
               <div className="w-8 h-1 rounded-full bg-primary-500/40" />
               <span className="text-slate-500 text-xs font-medium">Çeviriyi görmek için dokun</span>
               <div className="w-8 h-1 rounded-full bg-primary-500/40" />
@@ -65,49 +92,59 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip }) {
         </div>
 
         {/* ── Back ── */}
-        <div className="flip-card-back glass flex flex-col p-6 overflow-auto">
-          {/* Word header */}
-          <div className="text-center mb-4">
-            <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">Çeviri</p>
-            <div className="flex items-center justify-center gap-2 mb-1">
-              <h2 className="text-3xl font-black text-white break-words">{word.english_word}</h2>
+        <div className="flip-card-back glass flex flex-col p-6 overflow-y-auto">
+          {/* Word header — sticky at the top so English word NEVER disappears when scrolling */}
+          <div className="sticky top-0 bg-base-800/95 backdrop-blur-md pb-3 pt-1 z-20 border-b border-white/[0.06] -mx-6 px-6 mb-3 text-center">
+            <p className="text-slate-500 text-[10px] font-semibold uppercase tracking-widest mb-1">İngilizce</p>
+            <div className="flex items-center justify-center gap-2">
+              <h2 className="text-2xl sm:text-3xl font-black text-white break-words">{word.english_word}</h2>
               <button
                 onClick={(e) => { e.stopPropagation(); playAudio(word.english_word) }}
                 className="text-primary-400 hover:text-primary-300 p-1.5 rounded-full hover:bg-primary-500/20 transition-all shrink-0 active:scale-95"
                 title="Dinle"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6">
                   <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06Z" />
                   <path d="M15.932 7.757a.75.75 0 0 1 1.061 0 4.5 4.5 0 0 1 0 6.364.75.75 0 0 1-1.06-1.06 3 3 0 0 0 0-4.243.75.75 0 0 1 0-1.061Z" />
                 </svg>
               </button>
             </div>
             {word.phonetic && (
-              <p className="text-slate-500 font-mono text-sm">{word.phonetic}</p>
+              <p className="text-slate-500 font-mono text-xs">{word.phonetic}</p>
             )}
           </div>
 
-          <div className="h-px bg-white/[0.06] mb-4" />
-
           {/* Turkish translation */}
           {word.turkish_translation && (
-            <div className="mb-4">
+            <div className="mb-3">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Türkçe</p>
               <p className="text-primary-300 text-2xl font-bold">{word.turkish_translation}</p>
             </div>
           )}
 
           {/* Example Sentence */}
-          {word.example_sentence && (
-            <div className="mb-4">
+          {currentExample ? (
+            <div className="mb-3">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Örnek</p>
-              <p className="text-slate-300 text-sm italic leading-relaxed">"{word.example_sentence}"</p>
+              <p className="text-slate-300 text-sm italic leading-relaxed">"{currentExample}"</p>
+            </div>
+          ) : (
+            <div className="mb-3">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Örnek</p>
+              <button
+                type="button"
+                onClick={handleFetchExample}
+                disabled={fetchingExample}
+                className="inline-flex items-center gap-1.5 text-xs text-primary-400 hover:text-primary-300 bg-primary-500/10 hover:bg-primary-500/20 border border-primary-500/25 px-2.5 py-1 rounded-md transition-all shadow-sm"
+              >
+                {fetchingExample ? '⏳ Cümle aranıyor...' : '✨ Örnek Cümle Ekle'}
+              </button>
             </div>
           )}
 
           {/* Definition */}
           {word.definition && (
-            <div className="mb-4">
+            <div className="mb-3">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Tanım</p>
               <p className="text-slate-300 text-sm leading-relaxed">{word.definition}</p>
             </div>
@@ -115,7 +152,7 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip }) {
 
           {/* Synonyms */}
           {synonymsArr.length > 0 && (
-            <div className="mb-4">
+            <div className="mb-3">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Eş Anlamlılar</p>
               <div className="flex flex-wrap gap-1.5">
                 {synonymsArr.slice(0, 6).map((syn, i) => (
@@ -128,11 +165,11 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip }) {
           )}
 
           {/* ── Difficulty Buttons + Skip ── */}
-          <div className="mt-auto pt-2">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center mb-3">
+          <div className="mt-auto pt-4">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center mb-2.5">
               Bu kelimeyi nasıl buldun?
             </p>
-            <div className="grid grid-cols-3 gap-2 mb-2">
+            <div className="grid grid-cols-3 gap-2.5 mb-2.5">
               <button
                 id="btn-rate-hard"
                 onClick={(e) => { e.stopPropagation(); onRate('hard') }}
@@ -162,9 +199,9 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip }) {
             <button
               id="btn-skip"
               onClick={(e) => { e.stopPropagation(); onSkip() }}
-              className="w-full py-2 rounded-xl border border-white/[0.06] bg-base-800/60 text-slate-500 hover:text-slate-300 hover:border-white/20 text-xs font-semibold transition-all"
+              className="w-full py-2.5 rounded-xl border border-white/[0.08] bg-base-800/80 text-slate-400 hover:text-white hover:border-white/20 text-xs font-semibold transition-all shadow-sm"
             >
-              ⏭ Geç &nbsp;<span className="opacity-50 font-mono">Space</span>
+              ⏭ Geç &nbsp;<span className="opacity-60 font-mono">Space</span>
             </button>
           </div>
         </div>
