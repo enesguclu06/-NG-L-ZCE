@@ -6,6 +6,61 @@
 let tooltip = null;
 let currentWord = '';
 
+// ── Helper: Extract word under cursor ────────────────────────────────────────
+function extractWordFromEvent(e) {
+  if (!document.caretRangeFromPoint) return null;
+  const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+  if (!range || range.startContainer.nodeType !== Node.TEXT_NODE) return null;
+
+  const text = range.startContainer.nodeValue;
+  let start = range.startOffset;
+  let end = start;
+
+  // Expand left to word boundary
+  while (start > 0 && /[a-zA-Z'-]/.test(text[start - 1])) start--;
+  // Expand right to word boundary
+  while (end < text.length && /[a-zA-Z'-]/.test(text[end])) end++;
+
+  const extracted = text.slice(start, end).trim();
+  // Clean trailing punctuation
+  const word = extracted.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '');
+
+  if (word && word.length >= 2 && word.length <= 60 && /^[a-zA-Z\s\-']+$/.test(word)) {
+    return word;
+  }
+  return null;
+}
+
+// ── Listen for Alt+LeftClick (Show Translation Tooltip) ──────────────────────
+document.addEventListener('click', (e) => {
+  if (e.altKey && !e.shiftKey && !e.ctrlKey) {
+    const word = extractWordFromEvent(e);
+    if (word) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.getSelection()?.removeAllRanges();
+      
+      const rect = { top: e.clientY - 15, left: e.clientX - 20, width: 40, height: 30 };
+      showTooltip(word, rect);
+    }
+  }
+}, true);
+
+// ── Listen for Alt+RightClick (Direct Save) ──────────────────────────────────
+document.addEventListener('contextmenu', (e) => {
+  if (e.altKey && !e.shiftKey && !e.ctrlKey) {
+    const word = extractWordFromEvent(e);
+    if (word) {
+      e.preventDefault(); // Stop normal right-click menu
+      e.stopPropagation();
+      window.getSelection()?.removeAllRanges();
+      
+      // Tell background to save instantly
+      chrome.runtime.sendMessage({ action: 'manual_save', word });
+    }
+  }
+}, true);
+
 // ── Listen for text selection ──────────────────────────────────────────────
 document.addEventListener('mouseup', (e) => {
   // Don't trigger inside our own tooltip
