@@ -6,7 +6,7 @@ import { playAudio } from '../../lib/audio'
  * Front: English word + phonetic + tap prompt
  * Back:  Turkish translation + definition + synonyms + difficulty buttons
  */
-export function FlashCard({ word, isFlipped, onFlip, onRate }) {
+export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip }) {
   const synonymsArr = Array.isArray(word.synonyms) ? word.synonyms : []
 
   return (
@@ -52,12 +52,15 @@ export function FlashCard({ word, isFlipped, onFlip, onRate }) {
               </p>
             )}
 
-            {/* Tap hint */}
+            {/* Tap hint + Space hint */}
             <div className="flex items-center justify-center gap-2 mt-6">
               <div className="w-8 h-1 rounded-full bg-primary-500/40" />
               <span className="text-slate-500 text-xs font-medium">Çeviriyi görmek için dokun</span>
               <div className="w-8 h-1 rounded-full bg-primary-500/40" />
             </div>
+            <p className="text-slate-600 text-[11px] mt-2 text-center">
+              <kbd className="px-1.5 py-0.5 rounded bg-base-700 border border-white/10 font-mono text-[10px]">Space</kbd> ile geç
+            </p>
           </div>
         </div>
 
@@ -124,12 +127,12 @@ export function FlashCard({ word, isFlipped, onFlip, onRate }) {
             </div>
           )}
 
-          {/* ── Difficulty Buttons ── */}
+          {/* ── Difficulty Buttons + Skip ── */}
           <div className="mt-auto pt-2">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center mb-3">
               Bu kelimeyi nasıl buldun?
             </p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2 mb-2">
               <button
                 id="btn-rate-hard"
                 onClick={(e) => { e.stopPropagation(); onRate('hard') }}
@@ -155,6 +158,14 @@ export function FlashCard({ word, isFlipped, onFlip, onRate }) {
                 <span>Kolay</span>
               </button>
             </div>
+            {/* Skip button — no DB write, keep current difficulty */}
+            <button
+              id="btn-skip"
+              onClick={(e) => { e.stopPropagation(); onSkip() }}
+              className="w-full py-2 rounded-xl border border-white/[0.06] bg-base-800/60 text-slate-500 hover:text-slate-300 hover:border-white/20 text-xs font-semibold transition-all"
+            >
+              ⏭ Geç &nbsp;<span className="opacity-50 font-mono">Space</span>
+            </button>
           </div>
         </div>
       </div>

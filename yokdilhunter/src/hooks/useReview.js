@@ -90,6 +90,18 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
     }
   }, [currentWord, currentIndex, queue.length, updateAfterReview])
 
+  // ── Skip — advance without touching the DB ────────────────────
+  const skip = useCallback(() => {
+    if (!currentWord) return
+    const nextIndex = currentIndex + 1
+    if (nextIndex >= queue.length) {
+      setIsComplete(true)
+    } else {
+      setCurrentIndex(nextIndex)
+      setIsFlipped(false)
+    }
+  }, [currentWord, currentIndex, queue.length])
+
   const restartSession = useCallback(() => {
     startSession()
   }, [startSession])
@@ -105,6 +117,7 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
     startSession,
     flip,
     rateDifficulty,
+    skip,
     restartSession,
     total: queue.length,
     progress: queue.length > 0 ? currentIndex / queue.length : 0,

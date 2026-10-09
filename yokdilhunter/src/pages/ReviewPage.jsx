@@ -30,7 +30,7 @@ export default function ReviewPage() {
     queue, currentIndex, currentWord,
     isFlipped, isComplete, isStarted,
     sessionResults, startSession,
-    flip, rateDifficulty,
+    flip, rateDifficulty, skip,
     restartSession, total, progress,
   } = useReview(words, selectedMode, selectedCategory, updateAfterReview)
 
@@ -38,6 +38,23 @@ export default function ReviewPage() {
     fetchWords()
     fetchDecks()
   }, [fetchWords, fetchDecks])
+
+  // ── Space key: flip if not flipped, skip if flipped ───────────
+  useEffect(() => {
+    if (!isStarted || isComplete) return
+    function onKeyDown(e) {
+      if (e.code === 'Space' && e.target === document.body) {
+        e.preventDefault()
+        if (!isFlipped) {
+          flip()
+        } else {
+          skip()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [isStarted, isComplete, isFlipped, flip, skip])
 
   async function handleRate(difficulty) {
     try {
@@ -293,14 +310,8 @@ export default function ReviewPage() {
           isFlipped={isFlipped}
           onFlip={flip}
           onRate={handleRate}
+          onSkip={skip}
         />
-      )}
-
-      {/* ── Flip hint (only when not flipped) ── */}
-      {!isFlipped && (
-        <p className="text-center text-slate-600 text-xs mt-4 animate-pulse-soft">
-          Kartın üzerine tıkla veya dokun
-        </p>
       )}
     </div>
   )
