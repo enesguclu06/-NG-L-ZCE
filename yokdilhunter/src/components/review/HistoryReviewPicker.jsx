@@ -13,7 +13,7 @@ const PRESET_OPTIONS = [
   { key: 'yesterday',  label: '⏪ Dün',           desc: 'Dün çalıştıkların' },
   { key: 'last7days',  label: '📅 Son 7 Gün',     desc: 'Son bir haftada çalışılanlar' },
   { key: 'prevWeek',   label: '🗓️ Önceki Hafta',  desc: '7-14 gün önceki tekrarlar' },
-  { key: 'custom',     label: '📆 Belirli Gün',   desc: 'Takvimden tarih seç' },
+  { key: 'custom',     label: '📆 Belirli Günler', desc: 'Birden fazla tarih seç' },
 ]
 
 export function HistoryReviewPicker({
@@ -23,7 +23,8 @@ export function HistoryReviewPicker({
   onStart,
 }) {
   const [preset, setPreset] = useState('today')
-  const [customDate, setCustomDate] = useState(() => getLocalDateKey(new Date()))
+  const [customDates, setCustomDates] = useState(() => [getLocalDateKey(new Date())])
+  const [newDateInput, setNewDateInput] = useState(() => getLocalDateKey(new Date()))
   // Multi-select for difficulty: default all three active, or user can toggle
   const [selectedDiffs, setSelectedDiffs] = useState(['easy', 'medium', 'hard'])
   const [showWordList, setShowWordList] = useState(false)
@@ -43,20 +44,20 @@ export function HistoryReviewPicker({
   const diffCounts = useMemo(() => {
     return getDifficultyCountsForDate(reviewHistory, words, {
       preset,
-      customDateKey: customDate,
+      customDates,
       deckId: selectedCategory,
     })
-  }, [reviewHistory, words, preset, customDate, selectedCategory])
+  }, [reviewHistory, words, preset, customDates, selectedCategory])
 
   // 4. Matched words based on date + selected difficulties + deck
   const matchedWords = useMemo(() => {
     return filterWordsByHistory(reviewHistory, words, {
       preset,
-      customDateKey: customDate,
+      customDates,
       difficulties: selectedDiffs,
       deckId: selectedCategory,
     })
-  }, [reviewHistory, words, preset, customDate, selectedDiffs, selectedCategory])
+  }, [reviewHistory, words, preset, customDates, selectedDiffs, selectedCategory])
 
   // Filter preview words by local search query if user types
   const displayWords = useMemo(() => {
@@ -85,6 +86,36 @@ export function HistoryReviewPicker({
     setSelectedDiffs(types)
   }
 
+  // Add date to custom selection
+  function handleAddDate(dateToAdd) {
+    if (!dateToAdd) return
+    setCustomDates(prev => {
+      if (prev.includes(dateToAdd)) return prev
+      return [...prev, dateToAdd].sort().reverse()
+    })
+  }
+
+  // Remove date from custom selection
+  function handleRemoveDate(dateToRemove) {
+    setCustomDates(prev => prev.filter(d => d !== dateToRemove))
+  }
+
+  // Toggle date in custom selection
+  function handleToggleDate(dateKey) {
+    if (preset !== 'custom') {
+      setPreset('custom')
+      setCustomDates([dateKey])
+      return
+    }
+    setCustomDates(prev => {
+      if (prev.includes(dateKey)) {
+        return prev.filter(d => d !== dateKey)
+      } else {
+        return [...prev, dateKey].sort().reverse()
+      }
+    })
+  }
+
   // Quick day select from summary chips
   function handleSelectDayChip(dateKey) {
     const todayKey = getLocalDateKey(new Date())
@@ -92,13 +123,17 @@ export function HistoryReviewPicker({
     yDate.setDate(yDate.getDate() - 1)
     const yesterdayKey = getLocalDateKey(yDate)
 
-    if (dateKey === todayKey) {
-      setPreset('today')
-    } else if (dateKey === yesterdayKey) {
-      setPreset('yesterday')
+    if (preset === 'custom') {
+      handleToggleDate(dateKey)
     } else {
-      setPreset('custom')
-      setCustomDate(dateKey)
+      if (dateKey === todayKey) {
+        setPreset('today')
+      } else if (dateKey === yesterdayKey) {
+        setPreset('yesterday')
+      } else {
+        setPreset('custom')
+        setCustomDates([dateKey])
+      }
     }
   }
 
@@ -111,8 +146,13 @@ export function HistoryReviewPicker({
     else if (preset === 'last7days') dateTitle = 'Son 7 Gün'
     else if (preset === 'prevWeek') dateTitle = 'Önceki Hafta'
     else if (preset === 'custom') {
-      const d = new Date(customDate)
-      dateTitle = isNaN(d.getTime()) ? customDate : d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })
+      if (customDates.length === 0) return
+      if (customDates.length === 1) {
+        const d = new Date(customDates[0] + 'T00:00:00')
+        dateTitle = isNaN(d.getTime()) ? customDates[0] : d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })
+      } else {
+        dateTitle = `${customDates.length} Gün Seçildi`
+      }
     }
 
     const diffLabels = []
@@ -169,20 +209,103 @@ export function HistoryReviewPicker({
           })}
         </div>
 
-        {/* Custom Date Input (shown when preset === 'custom') */}
+        {/* Custom Multi-Date Selector (shown when preset === 'custom') */}
         {preset === 'custom' && (
-          <div className="pt-2 animate-fade-in">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-base-900/60 p-3.5 rounded-xl border border-white/[0.08]">
-              <span className="text-sm text-slate-300 font-medium shrink-0">
-                🗓️ Hangi günün tekrarlarını istiyorsun?
+          <div className="pt-2 space-y-3 animate-fade-in">
+            {/* Date input row */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 bg-base-900/60 p-3.5 rounded-xl border border-white/[0.08]">
+              <span className="text-xs sm:text-sm text-slate-300 font-medium shrink-0 flex items-center gap-1.5">
+                <span>🗓️ Takvimden Gün Ekle:</span>
               </span>
-              <input
-                type="date"
-                value={customDate}
-                max={todayStr}
-                onChange={e => setCustomDate(e.target.value)}
-                className="input-base py-2 px-3 text-sm flex-1 bg-base-800 border-white/20"
-              />
+              <div className="flex items-center gap-2 flex-1">
+                <input
+                  type="date"
+                  value={newDateInput}
+                  max={todayStr}
+                  onChange={e => {
+                    setNewDateInput(e.target.value)
+                    if (e.target.value) {
+                      handleAddDate(e.target.value)
+                    }
+                  }}
+                  className="input-base py-2 px-3 text-sm flex-1 bg-base-800 border-white/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAddDate(newDateInput)}
+                  className="px-3.5 py-2 rounded-xl bg-primary-500/20 text-primary-300 hover:bg-primary-500/30 border border-primary-500/30 text-xs font-semibold shrink-0 transition-colors"
+                >
+                  + Ekle
+                </button>
+              </div>
+            </div>
+
+            {/* Selected dates chip box */}
+            <div className="bg-base-900/40 p-3.5 rounded-xl border border-white/[0.05] space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-300">
+                  Seçili Günler ({customDates.length}):
+                </span>
+                {customDates.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    {daysSummary.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allDays = daysSummary.map(d => d.dateKey)
+                          setCustomDates(allDays)
+                        }}
+                        className="text-[11px] text-primary-400 hover:text-primary-300 underline font-medium"
+                      >
+                        Kayıtlı Tüm Günleri Seç
+                      </button>
+                    )}
+                    {customDates.length > 1 && (
+                      <>
+                        <span className="text-slate-600">•</span>
+                        <button
+                          type="button"
+                          onClick={() => setCustomDates([])}
+                          className="text-[11px] text-red-400 hover:text-red-300 underline font-medium"
+                        >
+                          Temizle
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {customDates.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {customDates.map(dateKey => {
+                    const d = new Date(dateKey + 'T00:00:00')
+                    const formatted = isNaN(d.getTime())
+                      ? dateKey
+                      : d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', weekday: 'short' })
+                    return (
+                      <span
+                        key={dateKey}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-primary-500/15 text-primary-300 border border-primary-500/30 animate-fade-in"
+                      >
+                        <span>📅 {formatted}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveDate(dateKey)}
+                          className="hover:text-red-400 hover:bg-white/10 rounded-full p-0.5 text-slate-400 transition-colors"
+                          title="Günü kaldır"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-amber-400/90 py-1">
+                  ⚠️ Henüz gün seçilmedi. Aşağıdaki kayıtlı günlere tıklayarak veya yukarıdan takvim ile gün ekleyebilirsin.
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -190,14 +313,16 @@ export function HistoryReviewPicker({
         {/* Past Active Review Days Timeline Chips */}
         {daysSummary.length > 0 && (
           <div className="pt-2">
-            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
-              💡 Tekrar Kaydı Bulunan Günler (Hızlı Seç):
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                💡 Tekrar Kaydı Bulunan Günler {preset === 'custom' ? '(Tıklayarak birden fazla gün seç):' : '(Hızlı Seç):'}
+              </span>
             </div>
             <div className="flex flex-wrap gap-2">
-              {daysSummary.slice(0, 8).map(d => {
+              {daysSummary.slice(0, 10).map(d => {
                 const isActive = (preset === 'today' && d.label === 'Bugün') ||
                   (preset === 'yesterday' && d.label === 'Dün') ||
-                  (preset === 'custom' && customDate === d.dateKey)
+                  (preset === 'custom' && customDates.includes(d.dateKey))
 
                 return (
                   <button

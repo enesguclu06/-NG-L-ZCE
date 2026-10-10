@@ -178,7 +178,14 @@ export function matchesDatePreset(dateInput, preset, customDateKey = null) {
   }
 
   if (preset === 'custom') {
-    return customDateKey ? targetKey === customDateKey : false
+    if (!customDateKey) return false
+    if (Array.isArray(customDateKey)) {
+      return customDateKey.includes(targetKey)
+    }
+    if (customDateKey instanceof Set) {
+      return customDateKey.has(targetKey)
+    }
+    return targetKey === customDateKey
   }
 
   return false
@@ -191,16 +198,19 @@ export function matchesDatePreset(dateInput, preset, customDateKey = null) {
  * @param {object[]} words - All words from useWords
  * @param {object} options
  *   preset: 'today' | 'yesterday' | 'last7days' | 'prevWeek' | 'custom'
- *   customDateKey: 'YYYY-MM-DD'
+ *   customDateKey: 'YYYY-MM-DD' | string[]
+ *   customDates: string[]
  *   difficulties: ['easy', 'medium', 'hard']
  *   deckId: 'all' | 'none' | string
  */
 export function filterWordsByHistory(reviewHistory, words, {
   preset = 'today',
   customDateKey = null,
+  customDates = null,
   difficulties = ['easy', 'medium', 'hard'],
   deckId = 'all',
 }) {
+  const activeCustomDates = customDates ?? customDateKey
   const wordMap = new Map(words.map(w => [w.id, w]))
   const diffSet = new Set(difficulties)
 
@@ -208,7 +218,7 @@ export function filterWordsByHistory(reviewHistory, words, {
   const matchedWordsMap = new Map()
 
   for (const entry of reviewHistory) {
-    if (!matchesDatePreset(entry.reviewed_at, preset, customDateKey)) {
+    if (!matchesDatePreset(entry.reviewed_at, preset, activeCustomDates)) {
       continue
     }
 
@@ -253,13 +263,15 @@ export function filterWordsByHistory(reviewHistory, words, {
 export function getDifficultyCountsForDate(reviewHistory, words, {
   preset = 'today',
   customDateKey = null,
+  customDates = null,
   deckId = 'all',
 }) {
+  const activeCustomDates = customDates ?? customDateKey
   const wordMap = new Map(words.map(w => [w.id, w]))
   const seenWordIds = new Map()
 
   for (const entry of reviewHistory) {
-    if (!matchesDatePreset(entry.reviewed_at, preset, customDateKey)) {
+    if (!matchesDatePreset(entry.reviewed_at, preset, activeCustomDates)) {
       continue
     }
 
