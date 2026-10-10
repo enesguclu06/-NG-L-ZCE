@@ -21,7 +21,7 @@ const MODE_OPTIONS = [
 
 export default function ReviewPage() {
   const { user } = useAuthStore()
-  const { words, loading, fetchWords, updateWord, updateAfterReview } = useWords()
+  const { words, loading, fetchWords, updateWord, deleteWord, updateAfterReview } = useWords()
   const { decks, fetchDecks, createDeck } = useDecks()
   const [activeTab, setActiveTab] = useState('modes') // 'modes' | 'history'
   const [selectedMode, setSelectedMode] = useState('default')
@@ -29,13 +29,15 @@ export default function ReviewPage() {
   const [newDeckName, setNewDeckName] = useState('')
   const [creatingDeck, setCreatingDeck] = useState(false)
   const [sessionInfo, setSessionInfo] = useState(null)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const { toast, showToast, clearToast } = useToast()
 
   const {
     queue, currentIndex, currentWord,
     isFlipped, isComplete, isStarted,
     sessionResults, startSession, exitSession,
-    flip, rateDifficulty, skip,
+    flip, rateDifficulty, skip, removeCurrentWord,
     restartSession, total, progress,
   } = useReview(words, selectedMode, selectedCategory, updateAfterReview)
 
@@ -44,10 +46,19 @@ export default function ReviewPage() {
     fetchDecks()
   }, [fetchWords, fetchDecks])
 
-  // ── Space key: flip if not flipped, skip if flipped ───────────
+  // ── Keyboard shortcuts ─────────────────────────────────────────
   useEffect(() => {
-    if (!isStarted || isComplete) return
     function onKeyDown(e) {
+      if (showDeleteModal) {
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          setShowDeleteModal(false)
+        }
+        return
+      }
+
+      if (!isStarted || isComplete) return
+
       if (e.code === 'Space' && e.target === document.body) {
         e.preventDefault()
         if (!isFlipped) {
@@ -59,13 +70,29 @@ export default function ReviewPage() {
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [isStarted, isComplete, isFlipped, flip, skip])
+  }, [isStarted, isComplete, isFlipped, showDeleteModal, flip, skip])
 
   async function handleRate(difficulty) {
     try {
       await rateDifficulty(difficulty)
     } catch (e) {
       showToast('Kaydetme hatası: ' + e.message, 'error')
+    }
+  }
+
+  async function handleDeleteCurrentWord() {
+    if (!currentWord || deleting) return
+    const wordName = currentWord.english_word
+    setDeleting(true)
+    try {
+      await deleteWord(currentWord.id)
+      removeCurrentWord()
+      setShowDeleteModal(false)
+      showToast(`"${wordName}" silindi.`, 'info')
+    } catch (e) {
+      showToast('Silme hatası: ' + e.message, 'error')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -426,7 +453,60 @@ export default function ReviewPage() {
           onRate={handleRate}
           onSkip={skip}
           onUpdateWord={updateWord}
+          onDelete={() => setShowDeleteModal(true)}
         />
+      )}
+
+      {/* ── Delete Confirmation Modal ── */}
+      {showDeleteModal && currentWord && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
+          onClick={() => !deleting && setShowDeleteModal(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-base-900 border border-white/10 p-6 shadow-2xl space-y-4 text-center animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-12 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center mx-auto text-xl border border-red-500/20">
+              🗑️
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white mb-1.5">Kelimeyi Sil</h3>
+              <p className="text-sm text-slate-300 leading-relaxed">
+                <strong className="text-white font-semibold">"{currentWord.english_word}"</strong> kelimesini silmek istediğine emin misin?
+              </p>
+              <p className="text-xs text-slate-500 mt-2">
+                Bu kelime kütüphanenden kalıcı olarak silinecektir.
+              </p>
+            </div>
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setShowDeleteModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-white/10 text-slate-300 hover:text-white hover:bg-white/5 font-semibold text-sm transition-colors disabled:opacity-50"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                id="btn-confirm-delete-flashcard"
+                disabled={deleting}
+                onClick={handleDeleteCurrentWord}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 active:scale-95 text-white font-semibold text-sm transition-all shadow-lg shadow-red-500/20 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {deleting ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Siliniyor...</span>
+                  </>
+                ) : (
+                  <span>Evet, Sil</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

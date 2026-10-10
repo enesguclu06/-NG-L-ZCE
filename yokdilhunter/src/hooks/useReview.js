@@ -117,6 +117,18 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
     }
   }, [currentWord, currentIndex, queue.length])
 
+  // ── Remove current word from queue (e.g. after deletion) ─────
+  const removeCurrentWord = useCallback(() => {
+    setQueue(prev => {
+      const nextQueue = prev.filter((_, idx) => idx !== currentIndex)
+      if (nextQueue.length === 0 || currentIndex >= nextQueue.length) {
+        setIsComplete(true)
+      }
+      setIsFlipped(false)
+      return nextQueue
+    })
+  }, [currentIndex])
+
   const restartSession = useCallback(() => {
     if (lastCustomWordsRef.current) {
       startSession(lastCustomWordsRef.current)
@@ -138,6 +150,7 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
     flip,
     rateDifficulty,
     skip,
+    removeCurrentWord,
     restartSession,
     total: queue.length,
     progress: queue.length > 0 ? currentIndex / queue.length : 0,
