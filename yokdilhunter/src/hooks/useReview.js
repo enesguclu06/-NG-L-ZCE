@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { isDueToday } from '../lib/spaced'
 
 /**
@@ -20,34 +20,41 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
   const [sessionResults, setSessionResults] = useState({ easy: 0, medium: 0, hard: 0 })
   const [isComplete, setIsComplete] = useState(false)
   const [isStarted, setIsStarted] = useState(false)
+  const lastCustomWordsRef = useRef(null)
 
   // ── Build & shuffle the review queue ─────────────────────────
-  const startSession = useCallback(() => {
+  const startSession = useCallback((customWordsList = null) => {
     let filtered
 
-    if (mode === 'today') {
-      // Words added today (since midnight local time)
-      const todayStart = new Date()
-      todayStart.setHours(0, 0, 0, 0)
-      filtered = allWords.filter(w => new Date(w.created_at) >= todayStart)
-    } else if (mode === 'due') {
-      // SM-2: only words whose next_review_at <= now (or never reviewed)
-      filtered = allWords.filter(isDueToday)
-    } else if (mode === 'default') {
-      filtered = allWords.filter(w => w.difficulty !== 'easy')
-    } else if (mode === 'hard_medium') {
-      filtered = allWords.filter(w => w.difficulty === 'hard' || w.difficulty === 'medium')
-    } else if (mode === 'focus') {
-      filtered = allWords // already pre-filtered by FocusReviewPage
+    if (customWordsList && Array.isArray(customWordsList)) {
+      filtered = customWordsList
+      lastCustomWordsRef.current = customWordsList
     } else {
-      filtered = allWords.filter(w => w.difficulty === mode)
-    }
-
-    if (category !== 'all') {
-      if (category === 'none') {
-        filtered = filtered.filter(w => !w.deck_id)
+      lastCustomWordsRef.current = null
+      if (mode === 'today') {
+        // Words added today (since midnight local time)
+        const todayStart = new Date()
+        todayStart.setHours(0, 0, 0, 0)
+        filtered = allWords.filter(w => new Date(w.created_at) >= todayStart)
+      } else if (mode === 'due') {
+        // SM-2: only words whose next_review_at <= now (or never reviewed)
+        filtered = allWords.filter(isDueToday)
+      } else if (mode === 'default') {
+        filtered = allWords.filter(w => w.difficulty !== 'easy')
+      } else if (mode === 'hard_medium') {
+        filtered = allWords.filter(w => w.difficulty === 'hard' || w.difficulty === 'medium')
+      } else if (mode === 'focus') {
+        filtered = allWords // already pre-filtered by FocusReviewPage
       } else {
-        filtered = filtered.filter(w => w.deck_id === category)
+        filtered = allWords.filter(w => w.difficulty === mode)
+      }
+
+      if (category !== 'all') {
+        if (category === 'none') {
+          filtered = filtered.filter(w => !w.deck_id)
+        } else {
+          filtered = filtered.filter(w => w.deck_id === category)
+        }
       }
     }
 
@@ -60,6 +67,14 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
     setIsComplete(false)
     setIsStarted(true)
   }, [allWords, mode, category])
+
+  const exitSession = useCallback(() => {
+    setIsStarted(false)
+    setIsComplete(false)
+    setQueue([])
+    setCurrentIndex(0)
+    setIsFlipped(false)
+  }, [])
 
   const currentWord = queue[currentIndex] ?? null
 
@@ -103,7 +118,11 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
   }, [currentWord, currentIndex, queue.length])
 
   const restartSession = useCallback(() => {
-    startSession()
+    if (lastCustomWordsRef.current) {
+      startSession(lastCustomWordsRef.current)
+    } else {
+      startSession()
+    }
   }, [startSession])
 
   return {
@@ -115,6 +134,7 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
     isStarted,
     sessionResults,
     startSession,
+    exitSession,
     flip,
     rateDifficulty,
     skip,

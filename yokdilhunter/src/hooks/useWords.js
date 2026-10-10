@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import { sm2Update } from '../lib/spaced'
+import { recordReviewLog } from '../lib/reviewHistory'
 
 /**
  * Hook for all word CRUD operations.
@@ -110,8 +111,11 @@ export function useWords() {
       word?.interval_days ?? 1,
       word?.review_count ?? 0,
     )
+    if (word) {
+      recordReviewLog(user?.id, word, difficulty)
+    }
     return updateWord(id, updates)
-  }, [updateWord])
+  }, [updateWord, user])
 
   return {
     words,
