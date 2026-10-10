@@ -39,7 +39,11 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
   return (
     <div
       className="flip-card w-full"
-      style={{ minHeight: '580px', height: 'min(720px, 82dvh)' }}
+      style={{
+        minHeight: '660px',
+        height: 'calc(100dvh - 160px)',
+        maxHeight: '850px'
+      }}
       onClick={!isFlipped ? onFlip : undefined}
     >
       <div className={`flip-card-inner ${isFlipped ? 'flipped' : ''}`}>

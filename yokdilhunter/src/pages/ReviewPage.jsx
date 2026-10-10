@@ -289,12 +289,12 @@ export default function ReviewPage() {
 
   // ── Review Session ────────────────────────────────────────────
   return (
-    <div className="max-w-2xl mx-auto px-4 py-4">
+    <div className="max-w-2xl mx-auto px-4 pt-2 pb-1 sm:py-3 flex flex-col justify-start">
       <Toast {...toast} onClose={clearToast} />
 
       {/* ── Progress bar ── */}
-      <div className="mb-4 animate-fade-up">
-        <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
+      <div className="mb-2 sm:mb-3 animate-fade-up">
+        <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
           <span className="font-semibold text-slate-300">{currentIndex + 1} / {total}</span>
           <span>{Math.round(progress * 100)}% tamamlandı</span>
         </div>
