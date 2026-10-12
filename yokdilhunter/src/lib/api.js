@@ -92,21 +92,9 @@ export async function fetchWordData(word, contextSentence = null) {
     } catch { /* silent */ }
   }
 
-  // Multi-tier fallback for example sentence:
-  // 1. Tatoeba database (bilingual curated sentences)
-  if (!example_sentence) {
-    example_sentence = await fetchTatoebaSentence(trimmed, lemma)
-  }
-
-  // 2. MyMemory translation memory
-  if (!example_sentence) {
-    example_sentence = await fetchMyMemorySentence(trimmed, lemma)
-  }
-
-  // 3. Fallback sentence guarantee
-  if (!example_sentence) {
-    example_sentence = generateFallbackSentence(trimmed)
-  }
+  // Resolve highest-quality example sentence:
+  // (Gemini AI -> Dictionary -> Wiktionary Wikitext -> Wikipedia -> Tatoeba -> MyMemory -> Dynamic Fallback)
+  example_sentence = await resolveBestSentence(trimmed, lemma, example_sentence)
 
   // Synonyms: Datamuse + dict merged
   const datumuseSynonyms = datumuseResult.status === 'fulfilled' ? (datumuseResult.value ?? []) : []
@@ -140,11 +128,11 @@ function pickBestDefinition(a, b) {
 }
 
 // ── Fetch with timeout ────────────────────────────────────────────────────────
-async function fetchWithTimeout(url, timeoutMs = 5000) {
+async function fetchWithTimeout(url, timeoutMs = 5000, options = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    return await fetch(url, { signal: controller.signal })
+    return await fetch(url, { ...options, signal: controller.signal })
   } catch (err) {
     if (err.name === 'AbortError') throw new Error('Bağlantı zaman aşımına uğradı')
     throw err
@@ -550,6 +538,151 @@ async function fetchWiktionaryTurkish(word) {
   }
 }
 
+// ── Gemini AI Configuration & Fetcher ──────────────────────────────────────────
+export function getGeminiApiKey() {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_API_KEY) {
+    const envKey = import.meta.env.VITE_GEMINI_API_KEY.trim()
+    if (envKey) return envKey
+  }
+  if (typeof localStorage !== 'undefined') {
+    const stored = localStorage.getItem('yokdil_gemini_api_key')
+    if (stored && stored.trim()) return stored.trim()
+  }
+  return ''
+}
+
+export function setGeminiApiKey(key) {
+  if (typeof localStorage !== 'undefined') {
+    if (key && key.trim()) {
+      localStorage.setItem('yokdil_gemini_api_key', key.trim())
+    } else {
+      localStorage.removeItem('yokdil_gemini_api_key')
+    }
+  }
+}
+
+async function fetchGeminiSentence(word, apiKey) {
+  if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length < 8) return null
+  const key = apiKey.trim()
+  const prompt = `Write a single, natural, academic English example sentence (suitable for YÖKDİL/YDS exam contexts) that clearly demonstrates the meaning of the word "${word}". Return ONLY the sentence itself without quotation marks, translation, markdown, or extra explanations.`
+
+  const models = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest']
+  for (const model of models) {
+    try {
+      const res = await fetchWithTimeout(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+        6000,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.4,
+              maxOutputTokens: 1000
+            }
+          })
+        }
+      )
+      if (!res.ok) continue
+      const data = await res.json()
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+      if (text && text.length >= 15 && text.length <= 260) {
+        return text.replace(/^["'`]+|["'`]+$/g, '').trim()
+      }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+// ── Wiktionary Wikitext Usage Examples ────────────────────────────────────────
+async function fetchWiktionaryExample(word) {
+  try {
+    const url = `https://en.wiktionary.org/w/api.php?action=parse&page=${encodeURIComponent(word)}&prop=wikitext&format=json&origin=*`
+    const res = await fetchWithTimeout(url, 4000)
+    if (!res.ok) return null
+    const data = await res.json()
+    const wikitext = data?.parse?.wikitext?.['*'] ?? ''
+    if (!wikitext) return null
+
+    // 1. Look for {{ux|en|...}} usage examples
+    const uxRegex = /\{\{ux\|en\|([^|}]+)/g
+    let match
+    while ((match = uxRegex.exec(wikitext)) !== null) {
+      const clean = match[1]
+        .replace(/'''?/g, '')
+        .replace(/\[\[(?:[^|\]]*\|)?([^\]]+)\]\]/g, '$1')
+        .replace(/<[^>]+>/g, '')
+        .trim()
+      if (clean.length >= 15 && clean.length <= 220 && /^[A-Z]/.test(clean) && /[.!?]$/.test(clean)) {
+        return clean
+      }
+    }
+
+    // 2. Look for passage=... quotations
+    const passageRegex = /passage=([^|}]+)/g
+    const wordRe = new RegExp(`\\b${word}\\b`, 'i')
+    while ((match = passageRegex.exec(wikitext)) !== null) {
+      const rawPassage = match[1]
+        .replace(/'''?/g, '')
+        .replace(/\[\[(?:[^|\]]*\|)?([^\]]+)\]\]/g, '$1')
+        .replace(/<[^>]+>/g, '')
+        .trim()
+      
+      const sentences = rawPassage.match(/[^.!?]+[.!?]+/g) || [rawPassage]
+      for (const s of sentences) {
+        const clean = s.trim()
+        if (wordRe.test(clean) && clean.length >= 25 && clean.length <= 190 && /^[A-Z]/.test(clean)) {
+          return clean
+        }
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+// ── Wikipedia Context Sentence Extractor ──────────────────────────────────────
+async function fetchWikipediaSentence(word) {
+  try {
+    const q = String.fromCharCode(34) + word + String.fromCharCode(34)
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&srlimit=3&format=json&origin=*`
+    const searchRes = await fetchWithTimeout(searchUrl, 3500)
+    if (!searchRes.ok) return null
+    const searchData = await searchRes.json()
+    const titles = (searchData?.query?.search || [])
+      .map(x => x.title)
+      .filter(t => t && !t.includes('(disambiguation)'))
+      .slice(0, 3)
+
+    if (titles.length === 0) return null
+
+    const extUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exintro=1&titles=${encodeURIComponent(titles.join('|'))}&format=json&origin=*`
+    const extRes = await fetchWithTimeout(extUrl, 4000)
+    if (!extRes.ok) return null
+    const extData = await extRes.json()
+    const pages = Object.values(extData?.query?.pages || {})
+    const wordRe = new RegExp(`\\b${word}\\b`, 'i')
+
+    for (const p of pages) {
+      const text = p.extract || ''
+      const sentences = text.match(/[^.!?]+[.!?]+/g) || []
+      for (const s of sentences) {
+        const clean = s.replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim()
+        if (wordRe.test(clean) && clean.length >= 25 && clean.length <= 210 && /^[A-Z]/.test(clean) && /[.!?]$/.test(clean)) {
+          return clean
+        }
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 // ── Tatoeba Sentence Search (with CORS fallback) ──────────────────────────────
 async function fetchTatoebaSentence(word, lemma = null) {
   const queries = [word]
@@ -634,24 +767,84 @@ function detectLemma(word) {
   return null
 }
 
-// ── Fallback Sentence Generator ───────────────────────────────────────────────
+// ── Dynamic Contextual Fallback Generator ──────────────────────────────────────
 function generateFallbackSentence(word) {
-  return `The term "${word}" is frequently used in academic and general contexts.`
+  const templates = [
+    `Scholars frequently examine the concept of ${word} when addressing contemporary academic questions.`,
+    `The phenomenon of ${word} plays a significant role in scientific and educational discussions.`,
+    `Understanding the term ${word} provides valuable insight into related academic reading passages.`,
+    `Recent studies highlight how ${word} continues to influence developments across multiple disciplines.`
+  ]
+  const sum = [...word].reduce((acc, c) => acc + c.charCodeAt(0), 0)
+  return templates[Math.abs(sum) % templates.length]
+}
+
+// ── Universal Sentence Resolver ───────────────────────────────────────────────
+async function resolveBestSentence(word, lemma = null, initialExample = null) {
+  // 1. Initial example (from dictionary or page selection) if valid and not a fallback
+  if (initialExample && typeof initialExample === 'string' && initialExample.trim().length >= 15) {
+    if (!initialExample.includes('is frequently used in academic and general contexts')) {
+      return initialExample.trim()
+    }
+  }
+
+  // 2. Gemini AI (Highest quality, context-aware YÖKDİL sentence)
+  const geminiKey = getGeminiApiKey()
+  if (geminiKey) {
+    const aiSentence = await fetchGeminiSentence(word, geminiKey)
+    if (aiSentence) return aiSentence
+  }
+
+  // 3. Wiktionary Wikitext usage examples
+  const wiktUx = await fetchWiktionaryExample(word)
+  if (wiktUx) return wiktUx
+
+  // 4. Wikipedia real context sentences
+  const wikiSentence = await fetchWikipediaSentence(word)
+  if (wikiSentence) return wikiSentence
+
+  // 5. Try lemma on Wiktionary / Wikipedia if word is inflected
+  if (lemma && lemma !== word) {
+    const lemmaWikt = await fetchWiktionaryExample(lemma)
+    if (lemmaWikt) return lemmaWikt
+    const lemmaWiki = await fetchWikipediaSentence(lemma)
+    if (lemmaWiki) return lemmaWiki
+  }
+
+  // 6. Tatoeba & MyMemory
+  const tat = await fetchTatoebaSentence(word, lemma)
+  if (tat) return tat
+
+  const mym = await fetchMyMemorySentence(word, lemma)
+  if (mym) return mym
+
+  // 7. Dynamic contextual fallback
+  return generateFallbackSentence(word)
 }
 
 // ── Standalone Example Sentence Getter (for auto-healing / regenerating) ───────
 export async function fetchExampleSentence(word) {
   const trimmed = word.trim().toLowerCase()
+
+  // 1. Check Gemini first for instant custom generation
+  const geminiKey = getGeminiApiKey()
+  if (geminiKey) {
+    const aiSentence = await fetchGeminiSentence(trimmed, geminiKey)
+    if (aiSentence) return aiSentence
+  }
+
+  // 2. Check standard dictionary data
   const [wikt, dict] = await Promise.allSettled([
     fetchWiktionaryDefinition(trimmed),
     fetchDictionaryData(trimmed)
   ])
 
-  const wiktEx = wikt.status === 'fulfilled' ? wikt.value?.example_sentence : null
   const dictEx = dict.status === 'fulfilled' ? dict.value?.example_sentence : null
-  if (wiktEx) return wiktEx
-  if (dictEx) return dictEx
+  const wiktEx = wikt.status === 'fulfilled' ? wikt.value?.example_sentence : null
+  if (dictEx && dictEx.length >= 15) return dictEx
+  if (wiktEx && wiktEx.length >= 15) return wiktEx
 
+  // 3. Extract lemma
   const wiktDef = wikt.status === 'fulfilled' ? wikt.value?.definition : ''
   const formRegex = /\b(?:third-person|simple past|past participle|present participle|plural|comparative|superlative|indicative|inflection|form) of (?:the )?(?:verb )?(?:noun )?(?:adjective )?([a-zA-Z-]+)/i
   let lemma = null
@@ -666,18 +859,13 @@ export async function fetchExampleSentence(word) {
       fetchWiktionaryDefinition(lemma),
       fetchDictionaryData(lemma)
     ])
-    const lWiktEx = lWikt.status === 'fulfilled' ? lWikt.value?.example_sentence : null
     const lDictEx = lDict.status === 'fulfilled' ? lDict.value?.example_sentence : null
-    if (lWiktEx) return lWiktEx
-    if (lDictEx) return lDictEx
+    const lWiktEx = lWikt.status === 'fulfilled' ? lWikt.value?.example_sentence : null
+    if (lDictEx && lDictEx.length >= 15) return lDictEx
+    if (lWiktEx && lWiktEx.length >= 15) return lWiktEx
   }
 
-  const tat = await fetchTatoebaSentence(trimmed, lemma)
-  if (tat) return tat
-
-  const mym = await fetchMyMemorySentence(trimmed, lemma)
-  if (mym) return mym
-
-  return generateFallbackSentence(trimmed)
+  return await resolveBestSentence(trimmed, lemma, null)
 }
+
 

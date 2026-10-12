@@ -1,10 +1,15 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { BottomNav } from './BottomNav'
+import { AiSettingsModal } from './AiSettingsModal'
+import { getGeminiApiKey } from '../../lib/api'
 
 export function Layout({ children }) {
   const { signOut, user } = useAuth()
   const navigate = useNavigate()
+  const [showAiModal, setShowAiModal] = useState(false)
+  const hasGemini = !!getGeminiApiKey()
 
   async function handleSignOut() {
     try {
@@ -29,7 +34,21 @@ export function Layout({ children }) {
           </div>
 
           {/* Right side */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* AI Settings Trigger */}
+            <button
+              onClick={() => setShowAiModal(true)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                hasGemini
+                  ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/20'
+                  : 'bg-white/5 text-slate-300 hover:text-white hover:bg-white/10 border border-white/5'
+              }`}
+              title="Yapay Zeka (Gemini) Ayarları"
+            >
+              <span>✨</span>
+              <span className="hidden xs:inline">AI Cümle</span>
+            </button>
+
             {user && (
               <span className="text-slate-500 text-xs hidden sm:block truncate max-w-[120px]">
                 {user.email}
@@ -53,6 +72,9 @@ export function Layout({ children }) {
       <main className="flex-1 pb-nav">
         {children}
       </main>
+
+      {/* ── AI Settings Modal ── */}
+      <AiSettingsModal isOpen={showAiModal} onClose={() => setShowAiModal(false)} />
 
       {/* ── Bottom Nav ── */}
       <BottomNav />
