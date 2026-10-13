@@ -7,6 +7,7 @@ import { useAuthStore } from '../store/authStore'
 import { FlashCard } from '../components/review/FlashCard'
 import { HistoryReviewPicker } from '../components/review/HistoryReviewPicker'
 import { Toast, useToast } from '../components/Toast'
+import { useStreak } from '../hooks/useStreak'
 
 const MODE_OPTIONS = [
   { key: 'today',       label: '📅 Bugün Eklenenleri Tekrar Et',     description: 'Bugün eklediğin kelimeleri hemen çalış', badge: 'Yeni' },
@@ -32,6 +33,7 @@ export default function ReviewPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const { toast, showToast, clearToast } = useToast()
+  const streak = useStreak()
 
   const {
     queue, currentIndex, currentWord,
@@ -190,6 +192,58 @@ export default function ReviewPage() {
           </div>
         ) : (
           <div className="space-y-4 animate-fade-up">
+
+            {/* ── Daily Streak Target Banner (Duolingo Style) ── */}
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-base-800 to-base-850 border border-amber-500/20 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2.5">
+                  <span className={`text-2xl ${streak.isCompletedToday ? 'animate-bounce-short' : ''}`}>🔥</span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-black text-white">{streak.currentStreak} Günlük Seri</span>
+                      {streak.isCompletedToday ? (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          Hedef Tamamlandı
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          {Math.max(0, streak.target - streak.todayCount)} kelime kaldı
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-bold text-amber-400">
+                    {streak.todayCount} / {streak.target} Kelime
+                  </span>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="h-2 w-full bg-base-900 rounded-full overflow-hidden p-0.5 border border-white/5">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    streak.isCompletedToday
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                      : 'bg-gradient-to-r from-amber-500 to-orange-500'
+                  }`}
+                  style={{ width: `${streak.progressPercent}%` }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between mt-2 text-[11px] text-slate-400">
+                <span className="truncate">
+                  {streak.isCompletedToday
+                    ? '🎉 Harika! Bugünün 10 kelimelik serisi tamamlandı.'
+                    : 'Günde en az 10 kelime tekrar ederek serini artır'}
+                </span>
+                <span className="shrink-0 flex items-center gap-1 text-[10px] text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20">
+                  <span>🛡️</span>
+                  {streak.freezeAvailable ? 'Kalkan Hazır' : `${streak.daysUntilFreeze}g sonra`}
+                </span>
+              </div>
+            </div>
 
             {/* ── Main Tab Switcher ── */}
             <div className="flex gap-2 p-1.5 bg-base-800 rounded-2xl border border-white/[0.06]">
@@ -378,10 +432,28 @@ export default function ReviewPage() {
           )}
 
           {/* Result breakdown */}
-          <div className="grid grid-cols-3 gap-3 mb-8">
+          <div className="grid grid-cols-3 gap-3 mb-6">
             <ResultStat count={sessionResults.easy ?? 0} label="Kolay" cls="text-easy" bg="bg-easy/10 border-easy/20" emoji="😊" />
             <ResultStat count={sessionResults.medium ?? 0} label="Orta" cls="text-medium" bg="bg-medium/10 border-medium/20" emoji="🤔" />
             <ResultStat count={sessionResults.hard ?? 0} label="Zor" cls="text-hard" bg="bg-hard/10 border-hard/20" emoji="😰" />
+          </div>
+
+          {/* Streak Status Card */}
+          <div className="p-3.5 rounded-2xl bg-base-900/70 border border-amber-500/20 mb-6 flex items-center justify-between text-left">
+            <div className="flex items-center gap-2.5">
+              <span className={`text-2xl ${streak.isCompletedToday ? 'animate-bounce-short' : ''}`}>🔥</span>
+              <div>
+                <p className="text-xs font-black text-white">{streak.currentStreak} Günlük Seri</p>
+                <p className="text-[11px] text-slate-400">
+                  {streak.isCompletedToday
+                    ? '🎉 Bugünün 10 kelimelik hedefi tamamlandı!'
+                    : `Bugün serini korumak için ${Math.max(0, streak.target - streak.todayCount)} kelime kaldı`}
+                </p>
+              </div>
+            </div>
+            <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">
+              {streak.todayCount} / {streak.target}
+            </span>
           </div>
 
           {/* Progress message */}
@@ -417,11 +489,17 @@ export default function ReviewPage() {
     <div className="max-w-2xl mx-auto px-4 pt-2 pb-1 sm:py-3 flex flex-col justify-start">
       <Toast {...toast} onClose={clearToast} />
 
-      {/* ── Header with session title & exit button ── */}
+      {/* ── Header with session title, streak & exit button ── */}
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-bold text-primary-300 bg-primary-500/10 px-2.5 py-1 rounded-lg border border-primary-500/20 truncate max-w-[80%]">
-          {sessionInfo?.title || 'Tekrar Oturumu'}
-        </span>
+        <div className="flex items-center gap-2 truncate max-w-[75%]">
+          <span className="text-xs font-bold text-primary-300 bg-primary-500/10 px-2.5 py-1 rounded-lg border border-primary-500/20 truncate">
+            {sessionInfo?.title || 'Tekrar Oturumu'}
+          </span>
+          <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20 flex items-center gap-1 shrink-0">
+            <span>🔥</span>
+            <span>{streak.todayCount}/10</span>
+          </span>
+        </div>
         <button
           type="button"
           onClick={handleExitReview}

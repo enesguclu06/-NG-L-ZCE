@@ -4,12 +4,16 @@ import { useAuth } from '../../hooks/useAuth'
 import { BottomNav } from './BottomNav'
 import { AiSettingsModal } from './AiSettingsModal'
 import { getGeminiApiKey } from '../../lib/api'
+import { useStreak } from '../../hooks/useStreak'
+import { StreakModal, StreakCelebrationModal } from '../streak/StreakModal'
 
 export function Layout({ children }) {
   const { signOut, user } = useAuth()
   const navigate = useNavigate()
   const [showAiModal, setShowAiModal] = useState(false)
+  const [showStreakModal, setShowStreakModal] = useState(false)
   const hasGemini = !!getGeminiApiKey()
+  const streak = useStreak()
 
   async function handleSignOut() {
     try {
@@ -35,6 +39,27 @@ export function Layout({ children }) {
 
           {/* Right side */}
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Streak Counter Trigger */}
+            <button
+              onClick={() => setShowStreakModal(true)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                streak.isCompletedToday
+                  ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 shadow-glow-orange'
+                  : streak.currentStreak > 0
+                    ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500/15'
+                    : 'bg-white/5 text-slate-400 hover:text-slate-200 border border-white/5'
+              }`}
+              title="Günlük Tekrar Serisi (Streak) ve Hedef"
+            >
+              <span className={`text-sm ${streak.isCompletedToday ? 'animate-bounce-short' : ''}`}>🔥</span>
+              <span>{streak.currentStreak}</span>
+              {!streak.isCompletedToday && (
+                <span className="text-[10px] opacity-75 font-normal hidden xs:inline">
+                  ({streak.todayCount}/10)
+                </span>
+              )}
+            </button>
+
             {/* AI Settings Trigger */}
             <button
               onClick={() => setShowAiModal(true)}
@@ -75,6 +100,20 @@ export function Layout({ children }) {
 
       {/* ── AI Settings Modal ── */}
       <AiSettingsModal isOpen={showAiModal} onClose={() => setShowAiModal(false)} />
+
+      {/* ── Daily Streak Modal ── */}
+      <StreakModal
+        isOpen={showStreakModal}
+        onClose={() => setShowStreakModal(false)}
+        streak={streak}
+      />
+
+      {/* ── Streak Goal Celebration Modal (hits 10 words) ── */}
+      <StreakCelebrationModal
+        isOpen={streak.justCompletedModal}
+        onClose={streak.closeCelebration}
+        currentStreak={streak.currentStreak}
+      />
 
       {/* ── Bottom Nav ── */}
       <BottomNav />

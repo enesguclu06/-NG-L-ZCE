@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { playAudio } from '../../lib/audio'
 import { fetchExampleSentence } from '../../lib/api'
+import { recordReviewLog } from '../../lib/reviewHistory'
 
 const DIFFICULTY_CONFIG = {
   unrated: { label: 'Değerlendirilmemiş', cls: 'badge-unrated', dot: '⬤' },
@@ -77,7 +78,9 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
 
   async function handleQuickRate(newDiff) {
     try {
-      await onUpdate(word.id, { difficulty: newDiff })
+      const nowIso = new Date().toISOString()
+      await onUpdate(word.id, { difficulty: newDiff, last_reviewed_at: nowIso })
+      recordReviewLog(word.user_id || null, word, newDiff)
     } catch (e) {
       console.error(e)
     }

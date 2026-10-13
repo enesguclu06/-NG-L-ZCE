@@ -524,6 +524,28 @@ async function fetchWiktionaryTurkish(word) {
   }
 }
 
+// ── Sentence Quality & Modernity Validator ──────────────────────────────────
+export function isCleanModernSentence(text) {
+  if (!text || typeof text !== 'string') return false
+  const clean = text.trim()
+  if (clean.length < 12 || clean.length > 160) return false
+  if (!/^[A-Z]/.test(clean)) return false
+  if (!/[.!?]$/.test(clean)) return false
+
+  // Reject archaic / Shakespearean / biblical English words
+  const archaicRegex = /\b(thou|thee|thy|thine|ye|didst|doth|dost|hath|art|wast|spake|unto|wherefore|whilst|thither|hither|saith|nay|prithee|thence|henceforth)\b/i
+  if (archaicRegex.test(clean)) return false
+
+  // Reject dictionary markup or non-English characters/codes
+  if (/[{}[\]<>]/.test(clean)) return false
+
+  // Word count constraint: keep it short & easy to memorize (4 to 16 words max)
+  const wordCount = clean.split(/\s+/).length
+  if (wordCount < 4 || wordCount > 16) return false
+
+  return true
+}
+
 // ── Gemini AI Sentence Generator ──────────────────────────────────────────────
 async function fetchGeminiSentence(word) {
   let key = typeof GEMINI_API_KEY === 'string' ? GEMINI_API_KEY.trim() : ''
@@ -535,22 +557,23 @@ async function fetchGeminiSentence(word) {
   }
   if (!key || key.length < 8) return null
 
-  const prompt = `Write a single, natural, academic English example sentence (suitable for YÖKDİL/YDS exam contexts) that clearly demonstrates the meaning of the word "${word}". Return ONLY the sentence itself without quotation marks, translation, markdown, or extra explanations.`
+  // Short, clear, simple, easy-to-memorize sentence prompt
+  const prompt = `Write a short, simple, modern English example sentence (maximum 10 to 14 words) clearly using the word "${word}". Keep it natural and very easy to memorize for English learners. Do NOT write long or complex academic sentences. Do NOT use archaic words (like thou, didst, etc.). Return ONLY the sentence itself, without quotation marks, translation, markdown, or extra explanations.`
 
-  const models = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest']
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
   for (const model of models) {
     try {
       const res = await fetchWithTimeout(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
-        6000,
+        5000,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
-              temperature: 0.4,
-              maxOutputTokens: 1000
+              temperature: 0.3,
+              maxOutputTokens: 200
             }
           })
         }
@@ -558,8 +581,14 @@ async function fetchGeminiSentence(word) {
       if (!res.ok) continue
       const data = await res.json()
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
-      if (text && text.length >= 15 && text.length <= 260) {
-        return text.replace(/^["'`]+|["'`]+$/g, '').trim()
+      if (text && text.length >= 10 && text.length <= 180) {
+        const clean = text.replace(/^["'`]+|["'`]+$/g, '').trim()
+        if (isCleanModernSentence(clean)) {
+          return clean
+        }
+        if (/^[A-Z]/.test(clean) && !/\b(thou|thee|thy|thine|didst|doth|hath)\b/i.test(clean)) {
+          return clean
+        }
       }
     } catch {
       continue
@@ -587,12 +616,12 @@ async function fetchWiktionaryExample(word) {
         .replace(/\[\[(?:[^|\]]*\|)?([^\]]+)\]\]/g, '$1')
         .replace(/<[^>]+>/g, '')
         .trim()
-      if (clean.length >= 15 && clean.length <= 220 && /^[A-Z]/.test(clean) && /[.!?]$/.test(clean)) {
+      if (isCleanModernSentence(clean)) {
         return clean
       }
     }
 
-    // 2. Look for passage=... quotations
+    // 2. Look for passage=... quotations (strictly filter out archaic citations!)
     const passageRegex = /passage=([^|}]+)/g
     const wordRe = new RegExp(`\\b${word}\\b`, 'i')
     while ((match = passageRegex.exec(wikitext)) !== null) {
@@ -605,7 +634,7 @@ async function fetchWiktionaryExample(word) {
       const sentences = rawPassage.match(/[^.!?]+[.!?]+/g) || [rawPassage]
       for (const s of sentences) {
         const clean = s.trim()
-        if (wordRe.test(clean) && clean.length >= 25 && clean.length <= 190 && /^[A-Z]/.test(clean)) {
+        if (wordRe.test(clean) && isCleanModernSentence(clean)) {
           return clean
         }
       }
@@ -735,10 +764,10 @@ function detectLemma(word) {
 // ── Dynamic Contextual Fallback Generator ──────────────────────────────────────
 function generateFallbackSentence(word) {
   const templates = [
-    `Scholars frequently examine the concept of ${word} when addressing contemporary academic questions.`,
-    `The phenomenon of ${word} plays a significant role in scientific and educational discussions.`,
-    `Understanding the term ${word} provides valuable insight into related academic reading passages.`,
-    `Recent studies highlight how ${word} continues to influence developments across multiple disciplines.`
+    `Daily practice makes it easy to remember the word "${word}".`,
+    `Students often encounter the word "${word}" in English exams.`,
+    `The teacher explained how to use "${word}" correctly in conversation.`,
+    `Learning "${word}" in context helps you expand your vocabulary.`
   ]
   const sum = [...word].reduce((acc, c) => acc + c.charCodeAt(0), 0)
   return templates[Math.abs(sum) % templates.length]
@@ -746,8 +775,8 @@ function generateFallbackSentence(word) {
 
 // ── Universal Sentence Resolver ───────────────────────────────────────────────
 async function resolveBestSentence(word, lemma = null, initialExample = null) {
-  // 1. Initial example (from dictionary or page selection) if valid
-  if (initialExample && typeof initialExample === 'string' && initialExample.trim().length >= 15) {
+  // 1. Initial example (from dictionary or page selection) if valid, modern and not generic
+  if (initialExample && typeof initialExample === 'string' && isCleanModernSentence(initialExample)) {
     if (!initialExample.includes('is frequently used in academic and general contexts')) {
       return initialExample.trim()
     }
