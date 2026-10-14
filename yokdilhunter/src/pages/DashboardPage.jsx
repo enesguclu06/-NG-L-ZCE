@@ -16,9 +16,8 @@ export default function DashboardPage() {
     // Total words
     const total = words.length
 
-    // To Review Today (next_review_date <= now)
-    const now = new Date().toISOString()
-    const toReview = words.filter(w => !w.next_review_at || new Date(w.next_review_at) <= new Date()).length
+    // To Review Today (next_review_date <= now, excluding mastered words)
+    const toReview = words.filter(w => w.difficulty !== 'mastered' && (!w.next_review_at || new Date(w.next_review_at) <= new Date())).length
 
     // Weekly added (last 7 days)
     const sevenDaysAgo = new Date()
@@ -26,7 +25,7 @@ export default function DashboardPage() {
     const weeklyAdded = words.filter(w => new Date(w.created_at) >= sevenDaysAgo).length
 
     // Difficulty breakdown
-    const diffCount = { unrated: 0, easy: 0, medium: 0, hard: 0 }
+    const diffCount = { unrated: 0, easy: 0, medium: 0, hard: 0, mastered: 0 }
     words.forEach(w => {
       const d = w.difficulty || 'unrated'
       if (diffCount[d] !== undefined) diffCount[d]++
@@ -37,6 +36,7 @@ export default function DashboardPage() {
       { name: 'Zor', value: diffCount.hard, color: '#F87171' }, // red-400
       { name: 'Orta', value: diffCount.medium, color: '#FBBF24' }, // amber-400
       { name: 'Kolay', value: diffCount.easy, color: '#4ADE80' }, // green-400
+      { name: 'Ezberlendi', value: diffCount.mastered, color: '#38BDF8' }, // sky-400
     ].filter(d => d.value > 0)
 
     // Recent 5 words
@@ -143,12 +143,13 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider
-                    ${word.difficulty === 'hard' ? 'bg-red-500/20 text-red-400' :
+                    ${word.difficulty === 'mastered' ? 'bg-sky-500/20 text-sky-400' :
+                      word.difficulty === 'hard' ? 'bg-red-500/20 text-red-400' :
                       word.difficulty === 'medium' ? 'bg-amber-500/20 text-amber-400' :
                       word.difficulty === 'easy' ? 'bg-green-500/20 text-green-400' :
                       'bg-slate-500/20 text-slate-400'}`}
                   >
-                    {word.difficulty === 'unrated' ? 'Yeni' : word.difficulty}
+                    {word.difficulty === 'mastered' ? 'Ezberlendi' : word.difficulty === 'unrated' ? 'Yeni' : word.difficulty}
                   </div>
                 </div>
               ))}

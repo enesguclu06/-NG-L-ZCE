@@ -119,6 +119,7 @@ export function getReviewDaysSummary(reviewHistory = []) {
         easy: 0,
         medium: 0,
         hard: 0,
+        mastered: 0,
       })
     }
 
@@ -128,6 +129,7 @@ export function getReviewDaysSummary(reviewHistory = []) {
       if (item.difficulty === 'easy') g.easy++
       else if (item.difficulty === 'medium') g.medium++
       else if (item.difficulty === 'hard') g.hard++
+      else if (item.difficulty === 'mastered') g.mastered++
     }
   }
 
@@ -288,7 +290,7 @@ export function getDifficultyCountsForDate(reviewHistory, words, {
     }
   }
 
-  const counts = { easy: 0, medium: 0, hard: 0, total: seenWordIds.size }
+  const counts = { easy: 0, medium: 0, hard: 0, mastered: 0, total: seenWordIds.size }
   for (const diff of seenWordIds.values()) {
     if (counts[diff] !== undefined) counts[diff]++
   }

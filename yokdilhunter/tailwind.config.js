@@ -30,6 +30,7 @@ export default {
           500: '#f59e0b',
         },
         // Difficulty colors
+        mastered: '#38bdf8', // sky-400
         easy:   '#34d399',   // emerald
         medium: '#fbbf24',   // amber
         hard:   '#f87171',   // red

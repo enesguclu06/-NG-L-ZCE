@@ -69,6 +69,7 @@ body {
 }
 
 /* ── Difficulty Pill ───────────────────────────────────────────── */
+.badge-mastered { @apply bg-sky-500/15 text-sky-400 border border-sky-500/30; }
 .badge-easy    { @apply bg-easy/15 text-easy border border-easy/30; }
 .badge-medium  { @apply bg-medium/15 text-medium border border-medium/30; }
 .badge-hard    { @apply bg-hard/15 text-hard border border-hard/30; }
@@ -98,9 +99,10 @@ body {
          font-medium rounded-xl px-4 py-2 transition-all duration-200
          hover:scale-[1.02] active:scale-[0.98];
 }
-.btn-easy   { @apply bg-easy/20 hover:bg-easy/30 border border-easy/40 text-easy font-semibold rounded-xl px-6 py-3 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]; }
-.btn-medium { @apply bg-medium/20 hover:bg-medium/30 border border-medium/40 text-medium font-semibold rounded-xl px-6 py-3 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]; }
-.btn-hard   { @apply bg-hard/20 hover:bg-hard/30 border border-hard/40 text-hard font-semibold rounded-xl px-6 py-3 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]; }
+.btn-mastered { @apply bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-400 font-semibold rounded-xl px-3 sm:px-6 py-3 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]; }
+.btn-easy   { @apply bg-easy/20 hover:bg-easy/30 border border-easy/40 text-easy font-semibold rounded-xl px-3 sm:px-6 py-3 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]; }
+.btn-medium { @apply bg-medium/20 hover:bg-medium/30 border border-medium/40 text-medium font-semibold rounded-xl px-3 sm:px-6 py-3 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]; }
+.btn-hard   { @apply bg-hard/20 hover:bg-hard/30 border border-hard/40 text-hard font-semibold rounded-xl px-3 sm:px-6 py-3 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]; }
 
 /* ── Progress bar ──────────────────────────────────────────────── */
 .progress-bar {

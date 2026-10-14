@@ -12,11 +12,12 @@ import { useStreak } from '../hooks/useStreak'
 const MODE_OPTIONS = [
   { key: 'today',       label: '📅 Bugün Eklenenleri Tekrar Et',     description: 'Bugün eklediğin kelimeleri hemen çalış', badge: 'Yeni' },
   { key: 'due',         label: '🗓️ Anki Tekrarı (SM-2)',             description: 'Algoritmanın bugün için planladığı kelimeler', badge: 'Önerilen' },
-  { key: 'default',     label: '🎯 Varsayılan (Zor + Orta + Yeni)',  description: 'Kolay olarak işaretlenenler hariç' },
+  { key: 'default',     label: '🎯 Varsayılan (Zor + Orta + Yeni)',  description: 'Kolay ve Ezberlenenler hariç' },
   { key: 'hard_medium', label: '🔴🟡 Sadece Zor + Orta kelimeler',  description: 'Çalışmaya devam etmen gereken tüm kelimeler' },
   { key: 'hard',        label: '🔴 Sadece Zor kelimeler',            description: 'Çalışmaya devam etmen gerekenler' },
   { key: 'medium',      label: '🟡 Sadece Orta kelimeler',           description: 'Biraz daha tekrar gerektirenler' },
   { key: 'easy',        label: '🟢 Sadece Kolay kelimeler',          description: 'Öğrendiğin kelimeleri gözden geçir' },
+  { key: 'mastered',    label: '🎓 Çok Kolay / Ezberlenenler',       description: 'Ezberlediğin kelimeleri sadece istediğinde gözden geçir' },
   { key: 'unrated',     label: '⚪ Sadece Yeni kelimeler',           description: 'Henüz değerlendirilmemişler' },
 ]
 
@@ -60,6 +61,13 @@ export default function ReviewPage() {
       }
 
       if (!isStarted || isComplete) return
+
+      if (isFlipped) {
+        if (e.key === '1') { e.preventDefault(); handleRate('hard'); return }
+        if (e.key === '2') { e.preventDefault(); handleRate('medium'); return }
+        if (e.key === '3') { e.preventDefault(); handleRate('easy'); return }
+        if (e.key === '4') { e.preventDefault(); handleRate('mastered'); return }
+      }
 
       if (e.code === 'Space' && e.target === document.body) {
         e.preventDefault()
@@ -120,7 +128,7 @@ export default function ReviewPage() {
       } else if (opt.key === 'due') {
         counts[opt.key] = filteredWords.filter(isDueToday).length
       } else if (opt.key === 'default') {
-        counts[opt.key] = filteredWords.filter(w => w.difficulty !== 'easy').length
+        counts[opt.key] = filteredWords.filter(w => w.difficulty !== 'easy' && w.difficulty !== 'mastered').length
       } else if (opt.key === 'hard_medium') {
         counts[opt.key] = filteredWords.filter(w => w.difficulty === 'hard' || w.difficulty === 'medium').length
       } else {
@@ -432,10 +440,11 @@ export default function ReviewPage() {
           )}
 
           {/* Result breakdown */}
-          <div className="grid grid-cols-3 gap-3 mb-6">
-            <ResultStat count={sessionResults.easy ?? 0} label="Kolay" cls="text-easy" bg="bg-easy/10 border-easy/20" emoji="😊" />
-            <ResultStat count={sessionResults.medium ?? 0} label="Orta" cls="text-medium" bg="bg-medium/10 border-medium/20" emoji="🤔" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-6">
             <ResultStat count={sessionResults.hard ?? 0} label="Zor" cls="text-hard" bg="bg-hard/10 border-hard/20" emoji="😰" />
+            <ResultStat count={sessionResults.medium ?? 0} label="Orta" cls="text-medium" bg="bg-medium/10 border-medium/20" emoji="🤔" />
+            <ResultStat count={sessionResults.easy ?? 0} label="Kolay" cls="text-easy" bg="bg-easy/10 border-easy/20" emoji="😊" />
+            <ResultStat count={sessionResults.mastered ?? 0} label="Ezberledim" cls="text-sky-400" bg="bg-sky-500/10 border-sky-500/20" emoji="🎓" />
           </div>
 
           {/* Streak Status Card */}
@@ -457,9 +466,10 @@ export default function ReviewPage() {
           </div>
 
           {/* Progress message */}
-          {sessionResults.easy > 0 && (
+          {(sessionResults.easy > 0 || sessionResults.mastered > 0) && (
             <p className="text-slate-400 text-sm mb-6">
-              🌟 {sessionResults.easy} kelime başarıyla tamamlandı.
+              🌟 {sessionResults.mastered > 0 ? `${sessionResults.mastered} kelimeyi tamamen ezberledin! ` : ''}
+              {sessionResults.easy > 0 ? `${sessionResults.easy} kelimeyi kolay olarak tamamladın.` : ''}
             </p>
           )}
 

@@ -18,7 +18,7 @@ create table public.words (
   phonetic             text,
   source_url           text,        -- reserved for Phase 2 (browser extension)
   difficulty           text        not null default 'unrated'
-                                   check (difficulty in ('unrated', 'easy', 'medium', 'hard')),
+                                   check (difficulty in ('unrated', 'easy', 'medium', 'hard', 'mastered')),
   -- SM-2 Spaced Repetition fields
   next_review_at       timestamptz not null default now(),
   interval_days        integer     not null default 1,

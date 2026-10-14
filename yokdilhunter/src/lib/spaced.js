@@ -25,13 +25,14 @@ const QUALITY_MAP = {
   hard: 2,
   medium: 3,
   easy: 5,
+  mastered: 5,
   unrated: 1,
 }
 
 /**
  * Runs one SM-2 iteration and returns the updated word fields.
  *
- * @param {'easy'|'medium'|'hard'|'unrated'} difficulty  - User's rating
+ * @param {'mastered'|'easy'|'medium'|'hard'|'unrated'} difficulty  - User's rating
  * @param {number} repetitions     - Current consecutive correct repetitions
  * @param {number} easeFactor      - Current ease factor (default 2.5)
  * @param {number} intervalDays    - Current interval in days (default 1)
@@ -46,7 +47,12 @@ export function sm2Update(difficulty, repetitions = 0, easeFactor = DEFAULT_EASE
   let newInterval
   let newEaseFactor
 
-  if (q < 3) {
+  if (difficulty === 'mastered') {
+    // Ezberlendi: Çok uzun aralık verilir, Anki due kuyruğuna bir daha düşmez
+    newInterval = 365
+    newRepetitions = (repetitions || 0) + 1
+    newEaseFactor = Math.min(3.0, (easeFactor || 2.5) + 0.2)
+  } else if (q < 3) {
     // Failed — reset to beginning
     newRepetitions = 0
     newInterval = 1
@@ -81,11 +87,13 @@ export function sm2Update(difficulty, repetitions = 0, easeFactor = DEFAULT_EASE
 /**
  * Returns true if a word is due for review today (or overdue).
  * Words with no next_review_at (never studied) are always due.
+ * Mastered ('Ezberledim') words are NEVER due in Anki.
  *
  * @param {object} word - Word object from the database
  * @returns {boolean}
  */
 export function isDueToday(word) {
+  if (word.difficulty === 'mastered') return false
   if (!word.next_review_at) return true
   return new Date(word.next_review_at) <= new Date()
 }
@@ -93,11 +101,13 @@ export function isDueToday(word) {
 /**
  * Returns the number of days until a word is next due.
  * Negative means overdue. 0 means due today.
+ * Mastered words return 999.
  *
  * @param {object} word
  * @returns {number}
  */
 export function daysUntilDue(word) {
+  if (word.difficulty === 'mastered') return 999
   if (!word.next_review_at) return 0
   const diff = new Date(word.next_review_at) - new Date()
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
@@ -109,6 +119,7 @@ export function getReviewUpdate(difficulty, currentReviewCount = 0) {
 }
 
 export function getIntervalDays(difficulty) {
+  if (difficulty === 'mastered') return 365
   const q = QUALITY_MAP[difficulty] ?? 1
   return q < 3 ? 1 : difficulty === 'easy' ? 10 : difficulty === 'medium' ? 3 : 1
 }

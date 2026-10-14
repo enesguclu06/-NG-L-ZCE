@@ -208,30 +208,39 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-center mb-2.5">
               Bu kelimeyi nasıl buldun?
             </p>
-            <div className="grid grid-cols-3 gap-2.5 mb-2.5">
+            <div className="grid grid-cols-4 gap-2 mb-2.5">
               <button
                 id="btn-rate-hard"
                 onClick={(e) => { e.stopPropagation(); onRate('hard') }}
-                className="btn-hard text-sm py-3 flex flex-col items-center gap-0.5"
+                className="btn-hard text-xs sm:text-sm py-2.5 sm:py-3 flex flex-col items-center gap-0.5"
               >
-                <span className="text-lg">😰</span>
+                <span className="text-base sm:text-lg">😰</span>
                 <span>Zor</span>
               </button>
               <button
                 id="btn-rate-medium"
                 onClick={(e) => { e.stopPropagation(); onRate('medium') }}
-                className="btn-medium text-sm py-3 flex flex-col items-center gap-0.5"
+                className="btn-medium text-xs sm:text-sm py-2.5 sm:py-3 flex flex-col items-center gap-0.5"
               >
-                <span className="text-lg">🤔</span>
+                <span className="text-base sm:text-lg">🤔</span>
                 <span>Orta</span>
               </button>
               <button
                 id="btn-rate-easy"
                 onClick={(e) => { e.stopPropagation(); onRate('easy') }}
-                className="btn-easy text-sm py-3 flex flex-col items-center gap-0.5"
+                className="btn-easy text-xs sm:text-sm py-2.5 sm:py-3 flex flex-col items-center gap-0.5"
               >
-                <span className="text-lg">😊</span>
+                <span className="text-base sm:text-lg">😊</span>
                 <span>Kolay</span>
+              </button>
+              <button
+                id="btn-rate-mastered"
+                onClick={(e) => { e.stopPropagation(); onRate('mastered') }}
+                className="btn-mastered text-xs sm:text-sm py-2.5 sm:py-3 flex flex-col items-center gap-0.5"
+                title="Ezberledim (Anki'de tekrar sorulmaz)"
+              >
+                <span className="text-base sm:text-lg">🎓</span>
+                <span>Ezberledim</span>
               </button>
             </div>
             {/* Skip & Delete button */}

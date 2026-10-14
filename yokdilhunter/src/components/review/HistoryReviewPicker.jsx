@@ -25,8 +25,8 @@ export function HistoryReviewPicker({
   const [preset, setPreset] = useState('today')
   const [customDates, setCustomDates] = useState(() => [getLocalDateKey(new Date())])
   const [newDateInput, setNewDateInput] = useState(() => getLocalDateKey(new Date()))
-  // Multi-select for difficulty: default all three active, or user can toggle
-  const [selectedDiffs, setSelectedDiffs] = useState(['easy', 'medium', 'hard'])
+  // Multi-select for difficulty: default all active, or user can toggle
+  const [selectedDiffs, setSelectedDiffs] = useState(['hard', 'medium', 'easy', 'mastered'])
   const [showWordList, setShowWordList] = useState(false)
   const [searchFilter, setSearchFilter] = useState('')
 
@@ -156,10 +156,11 @@ export function HistoryReviewPicker({
     }
 
     const diffLabels = []
+    if (selectedDiffs.includes('mastered')) diffLabels.push('Ezberledim')
     if (selectedDiffs.includes('easy')) diffLabels.push('Kolay')
     if (selectedDiffs.includes('medium')) diffLabels.push('Orta')
     if (selectedDiffs.includes('hard')) diffLabels.push('Zor')
-    const diffTitle = diffLabels.length === 3 ? 'Tüm Zorluklar' : diffLabels.join(' + ')
+    const diffTitle = diffLabels.length === 4 ? 'Tüm Zorluklar' : diffLabels.join(' + ')
 
     onStart(matchedWords, {
       title: `${dateTitle} (${diffTitle})`,
@@ -378,26 +379,26 @@ export function HistoryReviewPicker({
           O gün işaretlediğin puanlamalardan hangilerini tekrar etmek istiyorsun? (Çoklu seçim yapabilirsin)
         </p>
 
-        {/* 3 Toggle Pills: Kolay, Orta, Zor */}
-        <div className="grid grid-cols-3 gap-3">
-          {/* Kolay */}
+        {/* 4 Toggle Pills: Kolay, Orta, Zor, Ezberledim */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {/* Zor */}
           <button
             type="button"
-            onClick={() => toggleDifficulty('easy')}
-            className={`p-3.5 rounded-xl border transition-all flex flex-col items-center justify-center gap-1 ${
-              selectedDiffs.includes('easy')
-                ? 'bg-easy/15 border-easy/50 text-easy shadow-sm scale-[1.02]'
+            onClick={() => toggleDifficulty('hard')}
+            className={`p-3 rounded-xl border transition-all flex flex-col items-center justify-center gap-1 ${
+              selectedDiffs.includes('hard')
+                ? 'bg-hard/15 border-hard/50 text-hard shadow-sm scale-[1.02]'
                 : 'bg-base-900/40 border-white/[0.06] text-slate-500 hover:border-white/20'
             }`}
           >
-            <div className="flex items-center gap-1.5 font-bold text-sm">
-              <span>🟢</span>
-              <span>Kolay</span>
+            <div className="flex items-center gap-1 font-bold text-xs sm:text-sm">
+              <span>🔴</span>
+              <span>Zor</span>
             </div>
-            <span className={`text-xs font-black px-2 py-0.5 rounded-full ${
-              selectedDiffs.includes('easy') ? 'bg-easy/20 text-easy' : 'bg-base-700 text-slate-500'
+            <span className={`text-[11px] font-black px-2 py-0.5 rounded-full ${
+              selectedDiffs.includes('hard') ? 'bg-hard/20 text-hard' : 'bg-base-700 text-slate-500'
             }`}>
-              {diffCounts.easy} kelime
+              {diffCounts.hard ?? 0} kelime
             </span>
           </button>
 
@@ -405,41 +406,62 @@ export function HistoryReviewPicker({
           <button
             type="button"
             onClick={() => toggleDifficulty('medium')}
-            className={`p-3.5 rounded-xl border transition-all flex flex-col items-center justify-center gap-1 ${
+            className={`p-3 rounded-xl border transition-all flex flex-col items-center justify-center gap-1 ${
               selectedDiffs.includes('medium')
                 ? 'bg-medium/15 border-medium/50 text-medium shadow-sm scale-[1.02]'
                 : 'bg-base-900/40 border-white/[0.06] text-slate-500 hover:border-white/20'
             }`}
           >
-            <div className="flex items-center gap-1.5 font-bold text-sm">
+            <div className="flex items-center gap-1 font-bold text-xs sm:text-sm">
               <span>🟡</span>
               <span>Orta</span>
             </div>
-            <span className={`text-xs font-black px-2 py-0.5 rounded-full ${
+            <span className={`text-[11px] font-black px-2 py-0.5 rounded-full ${
               selectedDiffs.includes('medium') ? 'bg-medium/20 text-medium' : 'bg-base-700 text-slate-500'
             }`}>
-              {diffCounts.medium} kelime
+              {diffCounts.medium ?? 0} kelime
             </span>
           </button>
 
-          {/* Zor */}
+          {/* Kolay */}
           <button
             type="button"
-            onClick={() => toggleDifficulty('hard')}
-            className={`p-3.5 rounded-xl border transition-all flex flex-col items-center justify-center gap-1 ${
-              selectedDiffs.includes('hard')
-                ? 'bg-hard/15 border-hard/50 text-hard shadow-sm scale-[1.02]'
+            onClick={() => toggleDifficulty('easy')}
+            className={`p-3 rounded-xl border transition-all flex flex-col items-center justify-center gap-1 ${
+              selectedDiffs.includes('easy')
+                ? 'bg-easy/15 border-easy/50 text-easy shadow-sm scale-[1.02]'
                 : 'bg-base-900/40 border-white/[0.06] text-slate-500 hover:border-white/20'
             }`}
           >
-            <div className="flex items-center gap-1.5 font-bold text-sm">
-              <span>🔴</span>
-              <span>Zor</span>
+            <div className="flex items-center gap-1 font-bold text-xs sm:text-sm">
+              <span>🟢</span>
+              <span>Kolay</span>
             </div>
-            <span className={`text-xs font-black px-2 py-0.5 rounded-full ${
-              selectedDiffs.includes('hard') ? 'bg-hard/20 text-hard' : 'bg-base-700 text-slate-500'
+            <span className={`text-[11px] font-black px-2 py-0.5 rounded-full ${
+              selectedDiffs.includes('easy') ? 'bg-easy/20 text-easy' : 'bg-base-700 text-slate-500'
             }`}>
-              {diffCounts.hard} kelime
+              {diffCounts.easy ?? 0} kelime
+            </span>
+          </button>
+
+          {/* Ezberledim */}
+          <button
+            type="button"
+            onClick={() => toggleDifficulty('mastered')}
+            className={`p-3 rounded-xl border transition-all flex flex-col items-center justify-center gap-1 ${
+              selectedDiffs.includes('mastered')
+                ? 'bg-sky-500/15 border-sky-500/50 text-sky-400 shadow-sm scale-[1.02]'
+                : 'bg-base-900/40 border-white/[0.06] text-slate-500 hover:border-white/20'
+            }`}
+          >
+            <div className="flex items-center gap-1 font-bold text-xs sm:text-sm">
+              <span>🎓</span>
+              <span>Ezberledim</span>
+            </div>
+            <span className={`text-[11px] font-black px-2 py-0.5 rounded-full ${
+              selectedDiffs.includes('mastered') ? 'bg-sky-500/20 text-sky-400' : 'bg-base-700 text-slate-500'
+            }`}>
+              {diffCounts.mastered ?? 0} kelime
             </span>
           </button>
         </div>
@@ -477,7 +499,9 @@ export function HistoryReviewPicker({
               <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
                 {displayWords.map(w => {
                   const rating = w._historyMeta?.difficulty || w.difficulty
-                  const ratingBadge = rating === 'easy'
+                  const ratingBadge = rating === 'mastered'
+                    ? { cls: 'badge-mastered', label: 'Ezberledim', emoji: '🎓' }
+                    : rating === 'easy'
                     ? { cls: 'badge-easy', label: 'Kolay', emoji: '🟢' }
                     : rating === 'medium'
                     ? { cls: 'badge-medium', label: 'Orta', emoji: '🟡' }

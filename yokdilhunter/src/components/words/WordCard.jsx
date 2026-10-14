@@ -4,10 +4,11 @@ import { fetchExampleSentence } from '../../lib/api'
 import { recordReviewLog } from '../../lib/reviewHistory'
 
 const DIFFICULTY_CONFIG = {
-  unrated: { label: 'Değerlendirilmemiş', cls: 'badge-unrated', dot: '⬤' },
-  easy:    { label: 'Kolay',              cls: 'badge-easy',    dot: '⬤' },
-  medium:  { label: 'Orta',               cls: 'badge-medium',  dot: '⬤' },
-  hard:    { label: 'Zor',                cls: 'badge-hard',    dot: '⬤' },
+  unrated:  { label: 'Değerlendirilmemiş', cls: 'badge-unrated',  dot: '⬤' },
+  easy:     { label: 'Kolay',              cls: 'badge-easy',     dot: '⬤' },
+  medium:   { label: 'Orta',               cls: 'badge-medium',   dot: '⬤' },
+  hard:     { label: 'Zor',                cls: 'badge-hard',     dot: '⬤' },
+  mastered: { label: 'Ezberlendi',         cls: 'badge-mastered', dot: '🎓' },
 }
 
 /**
@@ -79,7 +80,14 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
   async function handleQuickRate(newDiff) {
     try {
       const nowIso = new Date().toISOString()
-      await onUpdate(word.id, { difficulty: newDiff, last_reviewed_at: nowIso })
+      const updates = { difficulty: newDiff, last_reviewed_at: nowIso }
+      if (newDiff === 'mastered') {
+        const next = new Date()
+        next.setDate(next.getDate() + 365)
+        updates.next_review_at = next.toISOString()
+        updates.interval_days = 365
+      }
+      await onUpdate(word.id, updates)
       recordReviewLog(word.user_id || null, word, newDiff)
     } catch (e) {
       console.error(e)
@@ -124,6 +132,7 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
           
           {/* Quick Rate */}
           <div className="flex opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity gap-1 mr-1">
+            <button onClick={() => handleQuickRate('mastered')} className="w-6 h-6 flex items-center justify-center text-[10px] font-bold rounded bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 transition-colors" title="Ezberledim (Çok Kolay)">E</button>
             <button onClick={() => handleQuickRate('easy')} className="w-6 h-6 flex items-center justify-center text-[10px] font-bold rounded bg-easy/10 text-easy hover:bg-easy/20 transition-colors" title="Kolay Yap">K</button>
             <button onClick={() => handleQuickRate('medium')} className="w-6 h-6 flex items-center justify-center text-[10px] font-bold rounded bg-medium/10 text-medium hover:bg-medium/20 transition-colors" title="Orta Yap">O</button>
             <button onClick={() => handleQuickRate('hard')} className="w-6 h-6 flex items-center justify-center text-[10px] font-bold rounded bg-hard/10 text-hard hover:bg-hard/20 transition-colors" title="Zor Yap">Z</button>

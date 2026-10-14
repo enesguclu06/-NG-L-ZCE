@@ -5,11 +5,12 @@ import { WordCard } from '../components/words/WordCard'
 import { Toast, useToast } from '../components/Toast'
 
 const DIFFICULTY_FILTERS = [
-  { key: 'all',     label: 'Tümü' },
-  { key: 'unrated', label: '⬤ Değerlendirilmemiş' },
-  { key: 'easy',    label: '⬤ Kolay' },
-  { key: 'medium',  label: '⬤ Orta' },
-  { key: 'hard',    label: '⬤ Zor' },
+  { key: 'all',      label: 'Tümü' },
+  { key: 'unrated',  label: '⬤ Değerlendirilmemiş' },
+  { key: 'easy',     label: '⬤ Kolay' },
+  { key: 'medium',   label: '⬤ Orta' },
+  { key: 'hard',     label: '⬤ Zor' },
+  { key: 'mastered', label: '🎓 Ezberledim' },
 ]
 
 export default function LibraryPage() {
@@ -184,7 +185,7 @@ export default function LibraryPage() {
         {DIFFICULTY_FILTERS.map(({ key, label }) => {
           const count = key === 'all' ? words.length : (counts[key] ?? 0)
           const isActive = diffFilter === key
-          const colorCls = key === 'easy' ? 'text-easy' : key === 'medium' ? 'text-medium' : key === 'hard' ? 'text-hard' : key === 'unrated' ? 'text-unrated' : ''
+          const colorCls = key === 'mastered' ? 'text-sky-400' : key === 'easy' ? 'text-easy' : key === 'medium' ? 'text-medium' : key === 'hard' ? 'text-hard' : key === 'unrated' ? 'text-unrated' : ''
           return (
             <button
               key={key}

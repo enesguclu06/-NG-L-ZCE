@@ -17,7 +17,7 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
   const [queue, setQueue] = useState([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isFlipped, setIsFlipped] = useState(false)
-  const [sessionResults, setSessionResults] = useState({ easy: 0, medium: 0, hard: 0 })
+  const [sessionResults, setSessionResults] = useState({ easy: 0, medium: 0, hard: 0, mastered: 0 })
   const [isComplete, setIsComplete] = useState(false)
   const [isStarted, setIsStarted] = useState(false)
   const lastCustomWordsRef = useRef(null)
@@ -37,10 +37,11 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
         todayStart.setHours(0, 0, 0, 0)
         filtered = allWords.filter(w => new Date(w.created_at) >= todayStart)
       } else if (mode === 'due') {
-        // SM-2: only words whose next_review_at <= now (or never reviewed)
+        // SM-2: only words whose next_review_at <= now (and not mastered)
         filtered = allWords.filter(isDueToday)
       } else if (mode === 'default') {
-        filtered = allWords.filter(w => w.difficulty !== 'easy')
+        // Exclude both 'easy' and 'mastered' words
+        filtered = allWords.filter(w => w.difficulty !== 'easy' && w.difficulty !== 'mastered')
       } else if (mode === 'hard_medium') {
         filtered = allWords.filter(w => w.difficulty === 'hard' || w.difficulty === 'medium')
       } else if (mode === 'focus') {
@@ -63,7 +64,7 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
     setQueue(shuffled)
     setCurrentIndex(0)
     setIsFlipped(false)
-    setSessionResults({ easy: 0, medium: 0, hard: 0 })
+    setSessionResults({ easy: 0, medium: 0, hard: 0, mastered: 0 })
     setIsComplete(false)
     setIsStarted(true)
   }, [allWords, mode, category])
