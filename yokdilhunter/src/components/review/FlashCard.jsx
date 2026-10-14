@@ -9,24 +9,30 @@ import { fetchExampleSentence } from '../../lib/api'
  * Back:  Turkish translation + definition + synonyms + difficulty buttons
  */
 export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWord, onDelete }) {
-  const synonymsArr = Array.isArray(word.synonyms) ? word.synonyms : []
+  // Arka yüz için kelimeyi ayrı tutuyoruz: Kart öne dönerken yeni kelimenin Türkçesi saniyelik görünmez
+  const [backWord, setBackWord] = useState(word)
   const [fetchingExample, setFetchingExample] = useState(false)
   const [currentExample, setCurrentExample] = useState(word.example_sentence ?? '')
 
   useEffect(() => {
-    setCurrentExample(word.example_sentence ?? '')
-  }, [word.id, word.example_sentence])
+    if (isFlipped) {
+      setBackWord(word)
+      setCurrentExample(word.example_sentence ?? '')
+    }
+  }, [isFlipped, word])
+
+  const backSynonymsArr = Array.isArray(backWord?.synonyms) ? backWord.synonyms : []
 
   async function handleFetchExample(e) {
     e?.stopPropagation()
-    if (fetchingExample) return
+    if (fetchingExample || !backWord) return
     setFetchingExample(true)
     try {
-      const sentence = await fetchExampleSentence(word.english_word)
+      const sentence = await fetchExampleSentence(backWord.english_word)
       if (sentence) {
         setCurrentExample(sentence)
         if (onUpdateWord) {
-          await onUpdateWord(word.id, { example_sentence: sentence })
+          await onUpdateWord(backWord.id, { example_sentence: sentence })
         }
       }
     } catch (err) {
@@ -114,7 +120,7 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
         </div>
 
         {/* ── Back ── */}
-        <div className="flip-card-back glass flex flex-col p-6 overflow-y-auto relative">
+        <div className={`flip-card-back glass flex flex-col p-6 overflow-y-auto relative transition-opacity duration-200 ${isFlipped ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           {/* Delete Button (Back - top right) */}
           {onDelete && (
             <button
@@ -136,9 +142,9 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
           <div className="sticky top-0 bg-base-800/95 backdrop-blur-md pb-3 pt-1 z-20 border-b border-white/[0.06] -mx-6 px-6 mb-3 text-center">
             <p className="text-slate-500 text-[10px] font-semibold uppercase tracking-widest mb-1">İngilizce</p>
             <div className="flex items-center justify-center gap-2">
-              <h2 className="text-2xl sm:text-3xl font-black text-white break-words">{word.english_word}</h2>
+              <h2 className="text-2xl sm:text-3xl font-black text-white break-words">{backWord?.english_word}</h2>
               <button
-                onClick={(e) => { e.stopPropagation(); playAudio(word.english_word) }}
+                onClick={(e) => { e.stopPropagation(); if (backWord?.english_word) playAudio(backWord.english_word) }}
                 className="text-primary-400 hover:text-primary-300 p-1.5 rounded-full hover:bg-primary-500/20 transition-all shrink-0 active:scale-95"
                 title="Dinle"
               >
@@ -148,16 +154,16 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
                 </svg>
               </button>
             </div>
-            {word.phonetic && (
-              <p className="text-slate-500 font-mono text-xs">{word.phonetic}</p>
+            {backWord?.phonetic && (
+              <p className="text-slate-500 font-mono text-xs">{backWord.phonetic}</p>
             )}
           </div>
 
           {/* Turkish translation */}
-          {word.turkish_translation && (
+          {backWord?.turkish_translation && (
             <div className="mb-3">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Türkçe</p>
-              <p className="text-primary-300 text-2xl font-bold">{word.turkish_translation}</p>
+              <p className="text-primary-300 text-2xl font-bold">{backWord.turkish_translation}</p>
             </div>
           )}
 
@@ -182,19 +188,19 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
           )}
 
           {/* Definition */}
-          {word.definition && (
+          {backWord?.definition && (
             <div className="mb-3">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Tanım</p>
-              <p className="text-slate-300 text-sm leading-relaxed">{word.definition}</p>
+              <p className="text-slate-300 text-sm leading-relaxed">{backWord.definition}</p>
             </div>
           )}
 
           {/* Synonyms */}
-          {synonymsArr.length > 0 && (
+          {backSynonymsArr.length > 0 && (
             <div className="mb-3">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Eş Anlamlılar</p>
               <div className="flex flex-wrap gap-1.5">
-                {synonymsArr.slice(0, 6).map((syn, i) => (
+                {backSynonymsArr.slice(0, 6).map((syn, i) => (
                   <span key={i} className="px-2 py-0.5 rounded-full bg-base-700 text-slate-300 text-xs border border-white/[0.05]">
                     {syn}
                   </span>

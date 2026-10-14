@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '../store/authStore'
+import { supabase } from '../lib/supabase'
 import {
   getStreakData,
   recordReviewForStreak,
   dismissFreezeNotice,
+  mergeCloudStreak,
+  syncStreakToCloud,
   DAILY_STREAK_TARGET
 } from '../lib/streak'
 
@@ -17,6 +20,42 @@ export function useStreak() {
   const refreshStreak = useCallback(() => {
     setStreak(getStreakData(userId))
   }, [userId])
+
+  // ── Sync with Supabase Account on mount / user change ─────────
+  useEffect(() => {
+    let isMounted = true
+
+    async function syncFromAccount() {
+      if (!userId) return
+
+      // 1. Check if user in auth store already has streak_data
+      if (user?.user_metadata?.streak_data) {
+        mergeCloudStreak(userId, user.user_metadata.streak_data)
+        if (isMounted) refreshStreak()
+      }
+
+      // 2. Fetch fresh user data from Supabase to guarantee cross-device sync (e.g. phone vs desktop)
+      try {
+        const { data: { user: freshUser } } = await supabase.auth.getUser()
+        if (freshUser?.user_metadata?.streak_data) {
+          mergeCloudStreak(userId, freshUser.user_metadata.streak_data)
+          if (isMounted) refreshStreak()
+        } else {
+          // If cloud has no streak yet but local has one, push to cloud
+          const local = getStreakData(userId)
+          if (local.currentStreak > 0 || local.todayCount > 0) {
+            syncStreakToCloud(userId, local)
+          }
+        }
+      } catch (err) {
+        console.warn('Cross-device streak sync failed:', err)
+      }
+    }
+
+    syncFromAccount()
+
+    return () => { isMounted = false }
+  }, [userId, user, refreshStreak])
 
   useEffect(() => {
     refreshStreak()

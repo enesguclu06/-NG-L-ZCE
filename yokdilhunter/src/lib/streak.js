@@ -1,9 +1,12 @@
+import { supabase } from './supabase'
+
 /**
  * streak.js
  * Duolingo-style Daily Review Streak System.
  * - Daily goal: Minimum 10 words reviewed per day.
  * - 1 missed day resets streak unless Streak Freeze (Recovery Shield) is available.
  * - 1 Streak Freeze granted every 14 days (2 weeks).
+ * - Cross-device cloud sync via Supabase user_metadata.
  */
 
 export const DAILY_STREAK_TARGET = 10
@@ -145,6 +148,79 @@ function saveStreakState(key, state) {
 }
 
 /**
+ * Saves streak state to Supabase account (user_metadata) so all devices sync.
+ */
+export async function syncStreakToCloud(userId, state) {
+  if (!userId) return
+  try {
+    await supabase.auth.updateUser({
+      data: {
+        streak_data: {
+          todayDate: state.todayDate,
+          todayCount: state.todayCount,
+          todayWordIds: state.todayWordIds || [],
+          currentStreak: state.currentStreak || 0,
+          bestStreak: state.bestStreak || 0,
+          lastCompletedDate: state.lastCompletedDate || null,
+          lastFreezeUsedAt: state.lastFreezeUsedAt || null,
+        }
+      }
+    })
+  } catch (err) {
+    console.warn('Could not sync streak to Supabase:', err)
+  }
+}
+
+/**
+ * Merges cloud streak with local streak and writes back to localStorage.
+ */
+export function mergeCloudStreak(userId, cloudState) {
+  if (!userId || !cloudState) return getStreakData(userId)
+  const key = getStorageKey(userId)
+  const local = getStreakData(userId)
+  const today = getLocalDateString(new Date())
+
+  const merged = { ...local }
+
+  // Best streak: take max
+  merged.bestStreak = Math.max(local.bestStreak || 0, cloudState.bestStreak || 0)
+
+  // Current streak & completion
+  if (cloudState.lastCompletedDate) {
+    if (!local.lastCompletedDate || cloudState.lastCompletedDate > local.lastCompletedDate) {
+      merged.lastCompletedDate = cloudState.lastCompletedDate
+      merged.currentStreak = cloudState.currentStreak || 0
+    } else if (cloudState.lastCompletedDate === local.lastCompletedDate) {
+      merged.currentStreak = Math.max(local.currentStreak || 0, cloudState.currentStreak || 0)
+    }
+  }
+
+  // Today count & words (if same day)
+  if (cloudState.todayDate === today && local.todayDate === today) {
+    const combinedIds = Array.from(new Set([...(local.todayWordIds || []), ...(cloudState.todayWordIds || [])]))
+    merged.todayWordIds = combinedIds
+    merged.todayCount = combinedIds.length
+    if (merged.todayCount >= DAILY_STREAK_TARGET && merged.lastCompletedDate !== today) {
+      merged.lastCompletedDate = today
+      merged.currentStreak = (merged.currentStreak || 0) + 1
+      merged.bestStreak = Math.max(merged.bestStreak, merged.currentStreak)
+    }
+  } else if (cloudState.todayDate === today && local.todayDate !== today) {
+    merged.todayDate = today
+    merged.todayWordIds = cloudState.todayWordIds || []
+    merged.todayCount = (cloudState.todayWordIds || []).length
+  }
+
+  if (cloudState.lastFreezeUsedAt) {
+    merged.lastFreezeUsedAt = Math.max(local.lastFreezeUsedAt || 0, cloudState.lastFreezeUsedAt)
+  }
+
+  saveStreakState(key, merged)
+  window.dispatchEvent(new CustomEvent('yokdil_streak_updated', { detail: merged }))
+  return merged
+}
+
+/**
  * Called when a word is reviewed. Increments today's distinct word count.
  * Returns { streakData, justCompletedToday: boolean }
  */
@@ -191,6 +267,11 @@ export function recordReviewForStreak(userId = null, wordId = null) {
 
   saveStreakState(key, updated)
 
+  // Sync to account in cloud if logged in
+  if (userId) {
+    syncStreakToCloud(userId, updated)
+  }
+
   // Dispatch global event for live reactive UI updates
   window.dispatchEvent(new CustomEvent('yokdil_streak_updated', {
     detail: { ...updated, justCompletedToday }
@@ -210,5 +291,8 @@ export function dismissFreezeNotice(userId = null) {
   const current = getStreakData(userId)
   const updated = { ...current, freezeUsedNotice: false }
   saveStreakState(key, updated)
+  if (userId) {
+    syncStreakToCloud(userId, updated)
+  }
   window.dispatchEvent(new CustomEvent('yokdil_streak_updated', { detail: updated }))
 }
