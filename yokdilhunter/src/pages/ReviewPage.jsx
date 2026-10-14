@@ -535,6 +535,7 @@ export default function ReviewPage() {
       {/* ── FlashCard ── */}
       {currentWord && (
         <FlashCard
+          key={currentWord.id}
           word={currentWord}
           isFlipped={isFlipped}
           onFlip={flip}
