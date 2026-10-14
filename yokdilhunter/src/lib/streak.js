@@ -221,6 +221,71 @@ export function mergeCloudStreak(userId, cloudState) {
 }
 
 /**
+ * Calculates and synchronizes streak directly from Supabase words table.
+ * Guarantees that on any new device (mobile, tablet, etc.) streak is immediately accurate.
+ */
+export function syncStreakWithWords(userId, words = []) {
+  if (!userId || !Array.isArray(words) || words.length === 0) return getStreakData(userId)
+  const key = getStorageKey(userId)
+  const current = getStreakData(userId)
+  const today = getLocalDateString(new Date())
+
+  // Kelimeleri tarihlere göre grupla
+  const dateMap = new Map() // 'YYYY-MM-DD' => Set(wordId)
+  for (const w of words) {
+    if (w.last_reviewed_at) {
+      const d = getLocalDateString(w.last_reviewed_at)
+      if (!dateMap.has(d)) dateMap.set(d, new Set())
+      dateMap.get(d).add(w.id)
+    }
+  }
+
+  const dbTodayWords = dateMap.get(today) ? Array.from(dateMap.get(today)) : []
+  // Localde bugün çalışılmış kelimelerle veritabanındaki kelimeleri birleştir
+  const combinedTodayWords = Array.from(new Set([...(current.todayWordIds || []), ...dbTodayWords]))
+  const todayCount = combinedTodayWords.length
+  const isCompletedToday = todayCount >= DAILY_STREAK_TARGET
+
+  // Geriye doğru streak say
+  let calculatedStreak = 0
+  let checkDate = new Date()
+
+  if (!isCompletedToday) {
+    checkDate.setDate(checkDate.getDate() - 1)
+  }
+
+  while (true) {
+    const keyStr = getLocalDateString(checkDate)
+    const count = (keyStr === today ? todayCount : (dateMap.get(keyStr)?.size || 0))
+    if (count >= DAILY_STREAK_TARGET) {
+      calculatedStreak++
+      checkDate.setDate(checkDate.getDate() - 1)
+    } else {
+      break
+    }
+  }
+
+  const newCurrentStreak = Math.max(current.currentStreak || 0, calculatedStreak)
+  const newBestStreak = Math.max(current.bestStreak || 0, newCurrentStreak)
+  const newLastCompletedDate = isCompletedToday ? today : current.lastCompletedDate
+
+  const updated = {
+    ...current,
+    todayDate: today,
+    todayCount,
+    todayWordIds: combinedTodayWords,
+    currentStreak: newCurrentStreak,
+    bestStreak: newBestStreak,
+    lastCompletedDate: newLastCompletedDate,
+  }
+
+  saveStreakState(key, updated)
+  syncStreakToCloud(userId, updated)
+  window.dispatchEvent(new CustomEvent('yokdil_streak_updated', { detail: updated }))
+  return updated
+}
+
+/**
  * Called when a word is reviewed. Increments today's distinct word count.
  * Returns { streakData, justCompletedToday: boolean }
  */

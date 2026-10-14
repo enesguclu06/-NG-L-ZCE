@@ -7,6 +7,7 @@ import {
   dismissFreezeNotice,
   mergeCloudStreak,
   syncStreakToCloud,
+  syncStreakWithWords,
   DAILY_STREAK_TARGET
 } from '../lib/streak'
 
@@ -49,6 +50,23 @@ export function useStreak() {
         }
       } catch (err) {
         console.warn('Cross-device streak sync failed:', err)
+      }
+
+      // 3. Directly verify with database words reviewed by user
+      // Even if localStorage is completely empty (new phone login), this guarantees correct streak!
+      try {
+        const { data: wordsData } = await supabase
+          .from('words')
+          .select('id, last_reviewed_at')
+          .eq('user_id', userId)
+          .not('last_reviewed_at', 'is', null)
+
+        if (wordsData && wordsData.length > 0) {
+          syncStreakWithWords(userId, wordsData)
+          if (isMounted) refreshStreak()
+        }
+      } catch (e) {
+        console.warn('Could not sync streak from words DB:', e)
       }
     }
 
