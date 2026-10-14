@@ -12,12 +12,12 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
   // Arka yüz için kelimeyi ayrı tutuyoruz: Kart öne dönerken yeni kelimenin Türkçesi saniyelik görünmez
   const [backWord, setBackWord] = useState(word)
   const [fetchingExample, setFetchingExample] = useState(false)
-  const [currentExample, setCurrentExample] = useState(word.example_sentence ?? '')
+  const [backExample, setBackExample] = useState(word.example_sentence ?? '')
 
   useEffect(() => {
     if (isFlipped) {
       setBackWord(word)
-      setCurrentExample(word.example_sentence ?? '')
+      setBackExample(word.example_sentence ?? '')
     }
   }, [isFlipped, word])
 
@@ -30,7 +30,7 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
     try {
       const sentence = await fetchExampleSentence(backWord.english_word)
       if (sentence) {
-        setCurrentExample(sentence)
+        setBackExample(sentence)
         if (onUpdateWord) {
           await onUpdateWord(backWord.id, { example_sentence: sentence })
         }
@@ -100,10 +100,10 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
               <p className="text-slate-400 font-mono text-lg mb-6">{word.phonetic}</p>
             )}
 
-            {/* Example sentence on front */}
-            {currentExample && (
+            {/* Example sentence on front - always uses active word's own sentence */}
+            {word.example_sentence && (
               <p className="text-slate-300 italic text-base px-6 mb-6">
-                "{currentExample}"
+                "{word.example_sentence}"
               </p>
             )}
 
@@ -168,10 +168,10 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
           )}
 
           {/* Example Sentence */}
-          {currentExample ? (
+          {backExample ? (
             <div className="mb-3">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Örnek</p>
-              <p className="text-slate-300 text-sm italic leading-relaxed">"{currentExample}"</p>
+              <p className="text-slate-300 text-sm italic leading-relaxed">"{backExample}"</p>
             </div>
           ) : (
             <div className="mb-3">
