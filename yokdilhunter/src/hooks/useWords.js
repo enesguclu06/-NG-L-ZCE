@@ -8,21 +8,21 @@ import { recordReviewLog } from '../lib/reviewHistory'
  * Hook for all word CRUD operations.
  */
 export function useWords() {
-  const { user } = useAuthStore()
+  const userId = useAuthStore(s => s.user?.id ?? null)
   const [words, setWords] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
   // ── Fetch all words for current user ──────────────────────────
   const fetchWords = useCallback(async () => {
-    if (!user) return
+    if (!userId) return
     setLoading(true)
     setError(null)
     try {
       const { data, error: err } = await supabase
         .from('words')
         .select('*, decks(name)')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false })
 
       if (err) throw err
@@ -32,17 +32,17 @@ export function useWords() {
     } finally {
       setLoading(false)
     }
-  }, [user])
+  }, [userId])
 
   // ── Insert a new word ─────────────────────────────────────────
   const addWord = useCallback(async (wordData) => {
-    if (!user) throw new Error('Not authenticated')
+    if (!userId) throw new Error('Not authenticated')
 
     // ── Duplicate check (case-insensitive) ───────────────────────
     const { data: existing, error: checkErr } = await supabase
       .from('words')
       .select('id, english_word')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .ilike('english_word', wordData.english_word.trim())
       .maybeSingle()
 
@@ -53,7 +53,7 @@ export function useWords() {
     }
 
     const payload = {
-      user_id: user.id,
+      user_id: userId,
       english_word: wordData.english_word.trim(),
       turkish_translation: wordData.turkish_translation ?? null,
       synonyms: wordData.synonyms ?? [],
@@ -74,7 +74,7 @@ export function useWords() {
     if (err) throw err
     setWords(prev => [data, ...prev])
     return data
-  }, [user])
+  }, [userId])
 
 
   // ── Update a word (edit) ──────────────────────────────────────
@@ -112,10 +112,10 @@ export function useWords() {
       word?.review_count ?? 0,
     )
     if (word) {
-      recordReviewLog(user?.id, word, difficulty)
+      recordReviewLog(userId, word, difficulty)
     }
     return updateWord(id, updates)
-  }, [updateWord, user])
+  }, [updateWord, userId])
 
   return {
     words,

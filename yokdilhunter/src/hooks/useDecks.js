@@ -1,22 +1,22 @@
 import { useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { useAuth } from './useAuth'
+import { useAuthStore } from '../store/authStore'
 
 export function useDecks() {
-  const { user } = useAuth()
+  const userId = useAuthStore(s => s.user?.id ?? null)
   const [decks, setDecks] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
   const fetchDecks = useCallback(async () => {
-    if (!user) return
+    if (!userId) return
     setLoading(true)
     setError(null)
     try {
       const { data, error: err } = await supabase
         .from('decks')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false })
 
       if (err) throw err
@@ -27,14 +27,14 @@ export function useDecks() {
     } finally {
       setLoading(false)
     }
-  }, [user])
+  }, [userId])
 
   const createDeck = async (name) => {
-    if (!user) throw new Error('Oturum açmalısınız')
+    if (!userId) throw new Error('Oturum açmalısınız')
     try {
       const { data, error: err } = await supabase
         .from('decks')
-        .insert([{ user_id: user.id, name }])
+        .insert([{ user_id: userId, name }])
         .select()
         .single()
 
@@ -48,7 +48,7 @@ export function useDecks() {
   }
 
   const deleteDeck = async (id) => {
-    if (!user) return
+    if (!userId) return
     try {
       // First set deck_id to null for words in this deck (Supabase should ideally do this with ON DELETE SET NULL)
       // but we do it manually just in case to avoid constraint errors if no cascade is set.
@@ -56,13 +56,13 @@ export function useDecks() {
         .from('words')
         .update({ deck_id: null })
         .eq('deck_id', id)
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
 
       const { error: err } = await supabase
         .from('decks')
         .delete()
         .eq('id', id)
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
 
       if (err) throw err
       setDecks(prev => prev.filter(d => d.id !== id))

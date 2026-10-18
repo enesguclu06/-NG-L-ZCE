@@ -39,7 +39,8 @@ function AuthRedirector() {
  * Shows a loading spinner while auth state is being determined.
  */
 function ProtectedRoute({ children }) {
-  const { user, loading } = useAuthStore()
+  const user = useAuthStore(s => s.user)
+  const loading = useAuthStore(s => s.loading)
 
   if (loading) {
     return (
@@ -65,7 +66,7 @@ function ProtectedRoute({ children }) {
 }
 
 export default function App() {
-  const { init } = useAuthStore()
+  const init = useAuthStore(s => s.init)
 
   // Initialize auth state on mount
   useEffect(() => {

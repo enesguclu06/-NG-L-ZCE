@@ -147,23 +147,31 @@ function saveStreakState(key, state) {
   }
 }
 
+let lastSyncedJson = null
+
 /**
  * Saves streak state to Supabase account (user_metadata) so all devices sync.
  */
 export async function syncStreakToCloud(userId, state) {
-  if (!userId) return
+  if (!userId || !state) return
+  const payload = {
+    todayDate: state.todayDate,
+    todayCount: state.todayCount,
+    todayWordIds: state.todayWordIds || [],
+    currentStreak: state.currentStreak || 0,
+    bestStreak: state.bestStreak || 0,
+    lastCompletedDate: state.lastCompletedDate || null,
+    lastFreezeUsedAt: state.lastFreezeUsedAt || null,
+  }
+  const payloadStr = `${userId}:${JSON.stringify(payload)}`
+  if (lastSyncedJson === payloadStr) {
+    return // Already synced to cloud, don't spam updateUser and trigger auth state loop!
+  }
   try {
+    lastSyncedJson = payloadStr
     await supabase.auth.updateUser({
       data: {
-        streak_data: {
-          todayDate: state.todayDate,
-          todayCount: state.todayCount,
-          todayWordIds: state.todayWordIds || [],
-          currentStreak: state.currentStreak || 0,
-          bestStreak: state.bestStreak || 0,
-          lastCompletedDate: state.lastCompletedDate || null,
-          lastFreezeUsedAt: state.lastFreezeUsedAt || null,
-        }
+        streak_data: payload
       }
     })
   } catch (err) {
@@ -213,6 +221,20 @@ export function mergeCloudStreak(userId, cloudState) {
 
   if (cloudState.lastFreezeUsedAt) {
     merged.lastFreezeUsedAt = Math.max(local.lastFreezeUsedAt || 0, cloudState.lastFreezeUsedAt)
+  }
+
+  // Check if anything actually changed before saving and dispatching
+  const hasChanged =
+    local.todayDate !== merged.todayDate ||
+    local.todayCount !== merged.todayCount ||
+    local.currentStreak !== merged.currentStreak ||
+    local.bestStreak !== merged.bestStreak ||
+    local.lastCompletedDate !== merged.lastCompletedDate ||
+    local.lastFreezeUsedAt !== merged.lastFreezeUsedAt ||
+    (local.todayWordIds || []).length !== (merged.todayWordIds || []).length
+
+  if (!hasChanged) {
+    return local
   }
 
   saveStreakState(key, merged)
@@ -277,6 +299,19 @@ export function syncStreakWithWords(userId, words = []) {
     currentStreak: newCurrentStreak,
     bestStreak: newBestStreak,
     lastCompletedDate: newLastCompletedDate,
+  }
+
+  // Check if anything actually changed before saving and dispatching
+  const hasChanged =
+    current.todayDate !== updated.todayDate ||
+    current.todayCount !== updated.todayCount ||
+    current.currentStreak !== updated.currentStreak ||
+    current.bestStreak !== updated.bestStreak ||
+    current.lastCompletedDate !== updated.lastCompletedDate ||
+    (current.todayWordIds || []).length !== (updated.todayWordIds || []).length
+
+  if (!hasChanged) {
+    return current
   }
 
   saveStreakState(key, updated)

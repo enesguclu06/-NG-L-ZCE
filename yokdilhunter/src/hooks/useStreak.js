@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuthStore } from '../store/authStore'
 import { supabase } from '../lib/supabase'
 import {
@@ -12,11 +12,12 @@ import {
 } from '../lib/streak'
 
 export function useStreak() {
-  const { user } = useAuthStore()
-  const userId = user?.id ?? null
+  const userId = useAuthStore(s => s.user?.id ?? null)
+  const initialCloudStreak = useAuthStore(s => s.user?.user_metadata?.streak_data ?? null)
 
   const [streak, setStreak] = useState(() => getStreakData(userId))
   const [justCompletedModal, setJustCompletedModal] = useState(false)
+  const syncedUserIdRef = useRef(null)
 
   const refreshStreak = useCallback(() => {
     setStreak(getStreakData(userId))
@@ -24,14 +25,23 @@ export function useStreak() {
 
   // ── Sync with Supabase Account on mount / user change ─────────
   useEffect(() => {
+    if (!userId) {
+      syncedUserIdRef.current = null
+      return
+    }
+
+    // Only run cloud sync once per user session to prevent re-render loops
+    if (syncedUserIdRef.current === userId) {
+      return
+    }
+    syncedUserIdRef.current = userId
+
     let isMounted = true
 
     async function syncFromAccount() {
-      if (!userId) return
-
       // 1. Check if user in auth store already has streak_data
-      if (user?.user_metadata?.streak_data) {
-        mergeCloudStreak(userId, user.user_metadata.streak_data)
+      if (initialCloudStreak) {
+        mergeCloudStreak(userId, initialCloudStreak)
         if (isMounted) refreshStreak()
       }
 
@@ -73,7 +83,7 @@ export function useStreak() {
     syncFromAccount()
 
     return () => { isMounted = false }
-  }, [userId, user, refreshStreak])
+  }, [userId, refreshStreak])
 
   useEffect(() => {
     refreshStreak()
