@@ -21,7 +21,7 @@ export function StreakModal({ isOpen, onClose, streak }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-      <div 
+      <div
         className="w-full max-w-sm bg-base-800 border border-white/10 rounded-3xl p-6 shadow-2xl relative overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
@@ -89,11 +89,10 @@ export function StreakModal({ isOpen, onClose, streak }) {
           {/* Progress Bar */}
           <div className="h-2.5 w-full bg-base-700/80 rounded-full overflow-hidden p-0.5 border border-white/5">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                isCompletedToday
+              className={`h-full rounded-full transition-all duration-500 ${isCompletedToday
                   ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
                   : 'bg-gradient-to-r from-amber-500 to-orange-500'
-              }`}
+                }`}
               style={{ width: `${progressPercent}%` }}
             />
           </div>
@@ -107,21 +106,19 @@ export function StreakModal({ isOpen, onClose, streak }) {
         {/* 14-Day Streak Recovery Shield */}
         <div className="p-3.5 rounded-2xl bg-base-900/50 border border-white/5 mb-4">
           <div className="flex items-start gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-              freezeAvailable
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${freezeAvailable
                 ? 'bg-cyan-500/15 border border-cyan-500/30 text-cyan-300'
                 : 'bg-slate-700/40 border border-white/5 text-slate-500'
-            }`}>
+              }`}>
               <span className="text-base">🛡️</span>
             </div>
             <div className="flex-1">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-white">Kurtarma Kalkanı</span>
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                  freezeAvailable
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${freezeAvailable
                     ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
                     : 'bg-slate-700 text-slate-400'
-                }`}>
+                  }`}>
                   {freezeAvailable ? 'Kullanıma Hazır' : `${daysUntilFreeze} gün kaldı`}
                 </span>
               </div>
@@ -139,7 +136,7 @@ export function StreakModal({ isOpen, onClose, streak }) {
           <span className="flex items-center gap-1">
             <span>🏆</span> En Yüksek Seri: <b className="text-white ml-0.5">{bestStreak} gün</b>
           </span>
-          <span className="text-slate-500 text-[11px]">Duolingo Tarzı Streak</span>
+          <span className="text-slate-500 text-[11px]"></span>
         </div>
 
         <button
@@ -165,7 +162,7 @@ export function StreakCelebrationModal({ isOpen, onClose, currentStreak }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-      <div 
+      <div
         className="w-full max-w-sm bg-gradient-to-b from-base-800 to-base-900 border border-amber-500/30 rounded-3xl p-6 shadow-2xl relative text-center overflow-hidden animate-scale-up"
         onClick={(e) => e.stopPropagation()}
       >

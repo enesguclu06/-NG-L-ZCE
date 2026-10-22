@@ -76,23 +76,16 @@ export function AiSettingsModal({ isOpen, onClose }) {
 
         {/* Status Badge */}
         <div className="my-4 p-3 rounded-xl bg-base-900/60 border border-white/5 flex items-center justify-between">
-          <span className="text-xs text-slate-400">Aktif Cümle Motoru:</span>
-          {apiKey.trim() ? (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              Gemini AI Aktif
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
-              Wikipedia & Sözlük Motoru
-            </span>
-          )}
+          <span className="text-xs text-slate-400">Aktif Cümle & Anlam Motoru:</span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            Gemini AI Hazır & Aktif ✨
+          </span>
         </div>
 
         {/* Description */}
         <p className="text-xs text-slate-300 leading-relaxed mb-4">
-          Google AI Studio'dan <b>ücretsiz</b> alacağınız Gemini API anahtarı ile akademik seviyede kusursuz örnek cümleler üretebilirsiniz. Boş bırakırsanız sistem Wikipedia ve açık kaynak sözlüklerden gerçek cümleleri çeker.
+          Tüm kullanıcılarımız için <b>ortak Gemini AI motoru varsayılan olarak hazırdır</b>; ek bir işlem yapmanıza gerek yoktur. İsterseniz aşağıdan kendi kişisel API anahtarınızı da kaydedebilirsiniz.
         </p>
 
         {/* Form */}
@@ -100,7 +93,7 @@ export function AiSettingsModal({ isOpen, onClose }) {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-medium text-slate-300">
-                Gemini API Key
+                Özel Gemini API Key (Opsiyonel)
               </label>
               <a
                 href="https://aistudio.google.com/app/apikey"
@@ -108,7 +101,7 @@ export function AiSettingsModal({ isOpen, onClose }) {
                 rel="noreferrer"
                 className="text-[11px] text-primary-400 hover:text-primary-300 underline underline-offset-2 flex items-center gap-0.5"
               >
-                Ücretsiz Key Al ↗
+                Kendi Key'ini Al ↗
               </a>
             </div>
             <div className="relative">
@@ -116,7 +109,7 @@ export function AiSettingsModal({ isOpen, onClose }) {
                 type={showKey ? 'text' : 'password'}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="AIzaSy..."
+                placeholder="Varsayılan Sistem AI Anahtarı Etkin ✨"
                 className="w-full bg-base-900 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-primary-500 transition-colors pr-16"
               />
               <button
