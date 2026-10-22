@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import { sm2Update } from '../lib/spaced'
 import { recordReviewLog } from '../lib/reviewHistory'
+import { getWordVariations } from '../lib/lemmatizer'
 
 /**
  * Hook for all word CRUD operations.
@@ -38,18 +39,28 @@ export function useWords() {
   const addWord = useCallback(async (wordData) => {
     if (!userId) throw new Error('Not authenticated')
 
-    // ── Duplicate check (case-insensitive) ───────────────────────
-    const { data: existing, error: checkErr } = await supabase
+    // ── Duplicate / Root variation check (case-insensitive) ───────────────────────
+    const inputWord = wordData.english_word.trim()
+    const variations = getWordVariations(inputWord)
+    const filterClauses = variations.slice(0, 30).map(v => `english_word.ilike.${v}`).join(',')
+
+    const { data: existingList, error: checkErr } = await supabase
       .from('words')
       .select('id, english_word')
       .eq('user_id', userId)
-      .ilike('english_word', wordData.english_word.trim())
-      .maybeSingle()
+      .or(filterClauses)
+      .limit(1)
 
     if (checkErr) throw checkErr
 
-    if (existing) {
-      throw new Error(`"${existing.english_word}" zaten kütüphanende kayıtlı! 📚`)
+    if (existingList && existingList.length > 0) {
+      const existing = existingList[0]
+      const isExact = existing.english_word.trim().toLowerCase() === inputWord.toLowerCase()
+      if (isExact) {
+        throw new Error(`"${existing.english_word}" zaten kütüphanende kayıtlı! 📚`)
+      } else {
+        throw new Error(`Bu kelimenin kök / çekim hali ("${existing.english_word}") zaten kütüphanende kayıtlı! 📚`)
+      }
     }
 
     const payload = {

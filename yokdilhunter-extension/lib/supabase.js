@@ -1,4 +1,5 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js';
+import { getWordVariations } from './lemmatizer.js';
 
 const STORAGE_KEY = 'yokdilhunter_session';
 
@@ -76,7 +77,10 @@ export async function checkDuplicate(english_word) {
   const session = await getSession();
   if (!session) throw new Error('Not authenticated');
 
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/words?user_id=eq.${session.user.id}&english_word=ilike.${encodeURIComponent(english_word)}&select=id,english_word`, {
+  const variations = getWordVariations(english_word.trim());
+  const filterClauses = variations.slice(0, 30).map(v => `english_word.ilike.${encodeURIComponent(v)}`).join(',');
+
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/words?user_id=eq.${session.user.id}&or=(${filterClauses})&select=id,english_word&limit=1`, {
     method: 'GET',
     headers: await getHeaders(true),
   });
@@ -84,7 +88,13 @@ export async function checkDuplicate(english_word) {
   const data = await res.json();
   if (!res.ok) throw new Error(data.message || 'Duplicate check failed');
 
-  return data.length > 0;
+  if (data.length > 0) {
+    const existing = data[0].english_word;
+    const isExact = existing.trim().toLowerCase() === english_word.trim().toLowerCase();
+    return { isDuplicate: true, existingWord: existing, isExact };
+  }
+
+  return { isDuplicate: false };
 }
 
 export async function saveWord(payload) {

@@ -217,9 +217,13 @@ async function processAndSaveWord(text, tabId, url, contextSentence = null, mode
       throw new Error("Lütfen eklentiye giriş yap! 🔒");
     }
 
-    const isDuplicate = await checkDuplicate(word);
-    if (isDuplicate) {
-      throw new Error(`"${word}" zaten kütüphanende! 📚`);
+    const duplicate = await checkDuplicate(word);
+    if (duplicate?.isDuplicate) {
+      if (duplicate.isExact) {
+        throw new Error(`"${duplicate.existingWord}" zaten kütüphanende kayıtlı! 📚`);
+      } else {
+        throw new Error(`Bu kelimenin kök / çekim hali ("${duplicate.existingWord}") zaten kütüphanende kayıtlı! 📚`);
+      }
     }
 
     // Fetch definitions, translations and example sentences (with mode if available)
