@@ -183,9 +183,27 @@ function validateClipboardWord(text) {
 // ── Message Listener (from popup or content) ──────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "manual_save") {
-    processAndSaveWord(message.word, null, null, message.context_sentence, message.mode)
-      .then(result => sendResponse({ success: true, result }))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+    (async () => {
+      // Content script manages its own direct toast feedback
+      // Only notify active tab if request came from popup
+      let notifyTabId = null;
+      let tabUrl = sender.tab?.url ?? null;
+      if (!sender.tab?.id) {
+        try {
+          const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (activeTab?.id && !activeTab.url?.startsWith('chrome://') && !activeTab.url?.startsWith('edge://')) {
+            notifyTabId = activeTab.id;
+            tabUrl = activeTab.url;
+          }
+        } catch { }
+      }
+      try {
+        const result = await processAndSaveWord(message.word, notifyTabId, tabUrl, message.context_sentence, message.mode);
+        sendResponse({ success: true, result });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
     return true;
   }
 
@@ -202,7 +220,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ── Core Save Logic ─────────────────────────────────────────────────────────
 async function processAndSaveWord(text, tabId, url, contextSentence = null, mode = null) {
   const word = text.trim().toLowerCase();
-  
+
   if (word.split(' ').length > 4) {
     if (tabId) notify(tabId, "Lütfen en fazla 4 kelimelik bir öbek seç! ❌");
     throw new Error("Çok uzun kelime seçimi");
@@ -256,48 +274,45 @@ async function processAndSaveWord(text, tabId, url, contextSentence = null, mode
 
 // ── Inject Notification via Content Script ────────────────────────────────────
 async function notify(tabId, message) {
+  if (!tabId) return;
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tabId },
-      func: (msg) => {
-        // Simple vanilla JS toast notification injected into the page
-        const toast = document.createElement('div');
-        toast.textContent = msg;
-        Object.assign(toast.style, {
-          position: 'fixed',
-          bottom: '20px',
-          right: '20px',
-          backgroundColor: '#1E293B', // Tailwind slate-800
-          color: '#F8FAFC', // slate-50
-          padding: '12px 20px',
-          borderRadius: '8px',
-          fontFamily: 'system-ui, sans-serif',
-          fontSize: '14px',
-          fontWeight: '500',
-          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-          zIndex: '2147483647',
-          transition: 'all 0.3s ease',
-          opacity: '0',
-          transform: 'translateY(10px)'
-        });
-        document.body.appendChild(toast);
-        
-        // Animate in
-        requestAnimationFrame(() => {
-          toast.style.opacity = '1';
-          toast.style.transform = 'translateY(0)';
-        });
+    // Try clean direct message to active content script first
+    await chrome.tabs.sendMessage(tabId, { action: 'show_toast', text: message });
+  } catch {
+    // Fallback if content script was not ready
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        func: (msg) => {
+          const existing = document.getElementById('ydh-notification-toast');
+          if (existing) existing.remove();
 
-        // Animate out after 3.5s
-        setTimeout(() => {
-          toast.style.opacity = '0';
-          toast.style.transform = 'translateY(10px)';
-          setTimeout(() => toast.remove(), 300);
-        }, 3500);
-      },
-      args: [message]
-    });
-  } catch (err) {
-    console.error("Failed to inject notification:", err);
+          const toast = document.createElement('div');
+          toast.id = 'ydh-notification-toast';
+          toast.textContent = msg;
+          Object.assign(toast.style, {
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            backgroundColor: '#0F172A',
+            border: '1px solid rgba(99, 102, 241, 0.45)',
+            color: '#F8FAFC',
+            padding: '12px 20px',
+            borderRadius: '10px',
+            fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+            fontSize: '14px',
+            fontWeight: '500',
+            boxShadow: '0 10px 25px -3px rgba(0, 0, 0, 0.5), 0 0 15px rgba(99, 102, 241, 0.2)',
+            zIndex: '2147483647',
+            pointerEvents: 'none'
+          });
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 3500);
+        },
+        args: [message]
+      });
+    } catch (err) {
+      console.error("Failed to inject notification:", err);
+    }
   }
 }

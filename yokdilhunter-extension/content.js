@@ -108,7 +108,7 @@ document.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       window.getSelection()?.removeAllRanges();
-      
+
       const rect = { top: e.clientY - 15, left: e.clientX - 20, width: 40, height: 30 };
       showTooltip(data.word, rect, data.sentence);
     }
@@ -123,7 +123,7 @@ document.addEventListener('contextmenu', (e) => {
       e.preventDefault(); // Stop normal right-click menu
       e.stopPropagation();
       window.getSelection()?.removeAllRanges();
-      
+
       // Tell background to save instantly with the webpage sentence
       chrome.runtime.sendMessage({
         action: 'manual_save',
@@ -250,10 +250,73 @@ function showTooltip(word, rect, contextSentence = null) {
   });
 }
 
+// ── Bottom-Right Toast Notification ─────────────────────────────────────────
+let toastTimer = null;
+function showToast(message) {
+  let toast = document.getElementById('ydh-notification-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'ydh-notification-toast';
+    document.body.appendChild(toast);
+  }
+
+  const isSuccess = message.includes('✅');
+  const isError = message.includes('❌') || message.includes('zaten') || message.includes('Lütfen') || message.includes('Hata');
+  
+  let borderColor = 'rgba(99, 102, 241, 0.5)';
+  if (isSuccess) borderColor = 'rgba(74, 222, 128, 0.6)';
+  if (isError) borderColor = 'rgba(248, 113, 113, 0.6)';
+
+  toast.textContent = message;
+  Object.assign(toast.style, {
+    position: 'fixed',
+    bottom: '24px',
+    right: '24px',
+    backgroundColor: '#0F172A',
+    border: `1px solid ${borderColor}`,
+    color: '#F8FAFC',
+    padding: '12px 20px',
+    borderRadius: '10px',
+    fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+    fontSize: '14px',
+    fontWeight: '500',
+    boxShadow: '0 10px 25px -3px rgba(0, 0, 0, 0.6), 0 0 15px rgba(99, 102, 241, 0.2)',
+    zIndex: '2147483647',
+    transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+    opacity: '0',
+    transform: 'translateY(12px)',
+    pointerEvents: 'none'
+  });
+
+  requestAnimationFrame(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+  });
+
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(12px)';
+    setTimeout(() => {
+      toast?.remove();
+    }, 300);
+  }, 3500);
+}
+
+// Listen for toast messages from background (Ctrl+Shift+S or context menu)
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.action === 'show_toast') {
+    showToast(message.text);
+  }
+});
+
 // ── Save word ──────────────────────────────────────────────────────────────
 function saveWord(word, btn, contextSentence = null, mode = 'ai') {
-  btn.disabled = true;
-  btn.textContent = mode === 'ai' ? '⏳ AI 4 Anlam Alınıyor...' : '⏳ Kaydediliyor...';
+  // 1. Tooltip anında kapansın
+  hideTooltip();
+
+  // 2. Anında sağ altta bildirim çıksın
+  showToast(`"${word}" kaydediliyor... ⏳`);
 
   chrome.runtime.sendMessage({
     action: 'manual_save',
@@ -261,16 +324,15 @@ function saveWord(word, btn, contextSentence = null, mode = 'ai') {
     context_sentence: contextSentence,
     mode: mode
   }, (response) => {
-    if (!tooltip) return;
+    if (chrome.runtime.lastError) {
+      showToast(`❌ Hata: ${chrome.runtime.lastError.message}`);
+      return;
+    }
     if (response?.success) {
-      btn.textContent = '✅ Kaydedildi!';
-      btn.style.background = 'rgba(74, 222, 128, 0.2)';
-      btn.style.color = '#4ade80';
-      setTimeout(hideTooltip, 1200);
+      const savedWord = response.result?.english_word || word;
+      showToast(`"${savedWord}" başarıyla kaydedildi! ✅`);
     } else {
-      btn.textContent = '❌ ' + (response?.error || 'Hata');
-      btn.style.color = '#f87171';
-      btn.disabled = false;
+      showToast(response?.error ? `${response.error}` : '❌ Kayıt başarısız oldu');
     }
   });
 }
@@ -402,5 +464,5 @@ function injectStyles() {
 
 // ── Escape HTML ────────────────────────────────────────────────────────────
 function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
