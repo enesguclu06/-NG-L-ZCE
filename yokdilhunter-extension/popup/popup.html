@@ -39,6 +39,34 @@
     <!-- Authenticated Screen -->
     <div id="authScreen" class="screen" style="display: none;">
       
+      <!-- Translation Mode Choice -->
+      <div class="mode-card">
+        <div class="mode-header">
+          <span>Kayıt Sistemi:</span>
+          <span id="currentModeLabel" class="mode-badge-ai">🤖 AI (4 Anlam)</span>
+        </div>
+        <div class="mode-buttons">
+          <button type="button" id="btnModeAi" class="mode-btn active">
+            <span class="mode-btn-icon">✨</span>
+            <div class="mode-btn-text">
+              <strong>Yeni Sistem (AI)</strong>
+              <small>En çok kullanılan 4 anlam</small>
+            </div>
+          </button>
+          <button type="button" id="btnModeClassic" class="mode-btn">
+            <span class="mode-btn-icon">⚡</span>
+            <div class="mode-btn-text">
+              <strong>Eski Sistem</strong>
+              <small>Klasik sözlük çevirisi</small>
+            </div>
+          </button>
+        </div>
+        <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #334155; display: flex; gap: 4px; align-items: center;">
+          <input type="password" id="geminiKeyInput" placeholder="Gemini API Key (AI için)..." style="font-size: 11px; padding: 4px 8px; flex: 1;">
+          <button type="button" id="saveKeyBtn" class="btn btn-outline" style="font-size: 10px; padding: 4px 8px;">Kaydet</button>
+        </div>
+      </div>
+
       <div class="quick-add">
         <input type="text" id="manualWord" placeholder="Hızlı kelime ekle...">
         <button id="addBtn" class="btn btn-primary">+</button>

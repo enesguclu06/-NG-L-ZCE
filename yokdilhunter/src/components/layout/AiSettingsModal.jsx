@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { getGeminiApiKey, setGeminiApiKey, fetchExampleSentence } from '../../lib/api'
+import { getGeminiApiKey, setGeminiApiKey, fetchExampleSentence, getTranslationMode, setTranslationMode, fetchGeminiTranslation } from '../../lib/api'
 
 export function AiSettingsModal({ isOpen, onClose }) {
   const currentKey = getGeminiApiKey()
   const isFromEnv = !!(typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_API_KEY)
   const [apiKey, setApiKey] = useState(currentKey)
+  const [transMode, setTransMode] = useState(getTranslationMode)
   const [showKey, setShowKey] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
@@ -15,6 +16,7 @@ export function AiSettingsModal({ isOpen, onClose }) {
   function handleSave(e) {
     e.preventDefault()
     setGeminiApiKey(apiKey.trim())
+    setTranslationMode(transMode)
     setSavedSuccess(true)
     setTimeout(() => setSavedSuccess(false), 2500)
   }
@@ -31,8 +33,15 @@ export function AiSettingsModal({ isOpen, onClose }) {
     try {
       // Temporarily set to test
       setGeminiApiKey(apiKey.trim())
-      const sample = await fetchExampleSentence('ephemeral')
-      setTestResult({ success: true, text: sample })
+      const [sampleSentence, sampleTrans] = await Promise.all([
+        fetchExampleSentence('ephemeral'),
+        fetchGeminiTranslation('ephemeral', apiKey.trim())
+      ])
+      setTestResult({
+        success: true,
+        sentence: sampleSentence,
+        meanings: sampleTrans || 'Alınamadı'
+      })
     } catch (err) {
       setTestResult({ success: false, text: err.message || 'Bağlantı hatası' })
     } finally {
@@ -125,15 +134,64 @@ export function AiSettingsModal({ isOpen, onClose }) {
             )}
           </div>
 
+          {/* Translation Mode Choice */}
+          <div className="pt-1">
+            <label className="text-xs font-medium text-slate-300 block mb-1.5">
+              Varsayılan Çeviri & Kayıt Sistemi
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setTransMode('ai')}
+                className={`p-2 rounded-xl border text-left transition-all ${
+                  transMode === 'ai'
+                    ? 'bg-primary-500/15 border-primary-500/50 text-white'
+                    : 'bg-base-900/40 border-white/5 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <div className="text-xs font-bold flex items-center gap-1">
+                  <span>✨</span> Yeni Sistem (AI)
+                </div>
+                <div className="text-[10px] opacity-75 mt-0.5">En çok kullanılan 4 anlam</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTransMode('classic')}
+                className={`p-2 rounded-xl border text-left transition-all ${
+                  transMode === 'classic'
+                    ? 'bg-amber-500/15 border-amber-500/50 text-white'
+                    : 'bg-base-900/40 border-white/5 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <div className="text-xs font-bold flex items-center gap-1">
+                  <span>⚡</span> Eski Sistem
+                </div>
+                <div className="text-[10px] opacity-75 mt-0.5">Klasik Google & Sözlük</div>
+              </button>
+            </div>
+          </div>
+
           {/* Test & Status Feedback */}
           {testResult && (
-            <div className={`p-3 rounded-xl text-xs border ${testResult.success ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200' : 'bg-red-500/10 border-red-500/30 text-red-300'}`}>
-              <div className="font-semibold mb-0.5">
-                {testResult.success ? '✓ Örnek Cümle Başarıyla Üretildi:' : '✕ Test Başarısız:'}
+            <div className={`p-3 rounded-xl text-xs border space-y-1.5 ${testResult.success ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200' : 'bg-red-500/10 border-red-500/30 text-red-300'}`}>
+              <div className="font-semibold">
+                {testResult.success ? '✓ AI Testi Başarılı:' : '✕ Test Başarısız:'}
               </div>
-              <div className="italic text-[11px] opacity-90">
-                "{testResult.text}"
-              </div>
+              {testResult.success ? (
+                <>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-400">4 Anlam: </span>
+                    <span className="font-medium text-white">{testResult.meanings}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-400">Örnek Cümle: </span>
+                    <span className="italic text-slate-300">"{testResult.sentence}"</span>
+                  </div>
+                </>
+              ) : (
+                <div className="italic text-[11px] opacity-90">{testResult.text}</div>
+              )}
             </div>
           )}
 

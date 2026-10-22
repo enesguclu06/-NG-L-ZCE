@@ -184,3 +184,99 @@ input:focus {
 .tips b {
   color: #E2E8F0;
 }
+
+/* ── Mode Selection Card ── */
+.mode-card {
+  background: #1E293B;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.mode-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #94A3B8;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.mode-badge-ai {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.2);
+  color: #A5B4FC;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+}
+
+.mode-badge-classic {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.2);
+  color: #FCD34D;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.mode-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.mode-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  background: #0F172A;
+  border: 1px solid #334155;
+  border-radius: 7px;
+  padding: 6px 8px;
+  color: #94A3B8;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.mode-btn:hover {
+  background: #1a2438;
+  color: #E2E8F0;
+}
+
+.mode-btn.active {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.6);
+  color: #F8FAFC;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+}
+
+.mode-btn-icon {
+  font-size: 13px;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.mode-btn-text strong {
+  display: block;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.mode-btn-text small {
+  display: block;
+  font-size: 9px;
+  color: #64748B;
+  margin-top: 2px;
+  line-height: 1.1;
+}
+
+.mode-btn.active .mode-btn-text small {
+  color: #94A3B8;
+}

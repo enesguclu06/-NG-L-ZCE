@@ -9,7 +9,26 @@ import { GEMINI_API_KEY } from '../config.js'
  *   3. Datamuse API        → richer synonyms
  *   4. MyMemory + Google Translate informal API → Turkish translation
  */
-export async function fetchWordData(word, contextSentence = null) {
+export async function getTranslationMode() {
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    try {
+      const data = await chrome.storage.local.get(['translation_mode'])
+      if (data?.translation_mode) return data.translation_mode
+    } catch {}
+  }
+  return 'ai'
+}
+
+export async function setTranslationMode(mode) {
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    try {
+      await chrome.storage.local.set({ translation_mode: mode === 'classic' ? 'classic' : 'ai' })
+    } catch {}
+  }
+}
+
+export async function fetchWordData(word, contextSentence = null, mode = null) {
+  const selectedMode = mode || await getTranslationMode()
   const trimmed = word.trim().toLowerCase()
   const errors = []
 
@@ -49,7 +68,7 @@ export async function fetchWordData(word, contextSentence = null) {
   }
 
   let definition = pickBestDefinition(dictDefinition, wiktDefinition)
-  let example_sentence = pageSentence ?? dictExample ?? wiktExample ?? null
+  let example_sentence = dictExample ?? wiktExample ?? null
 
   // Check if definition is a grammatical inflection pointer (e.g. "third-person singular simple present indicative of presume")
   const formRegex = /\b(?:third-person|simple past|past participle|present participle|plural|comparative|superlative|indicative|inflection|form) of (?:the )?(?:verb )?(?:noun )?(?:adjective )?([a-zA-Z-]+)/i
@@ -97,11 +116,23 @@ export async function fetchWordData(word, contextSentence = null) {
   const datumuseSynonyms = datumuseResult.status === 'fulfilled' ? (datumuseResult.value ?? []) : []
   const synonyms = [...new Set([...datumuseSynonyms, ...dictSynonyms])].slice(0, 10)
 
+  // Translation: Use AI top 4 meanings if selectedMode === 'ai', otherwise classic dictionary
   let turkish_translation = null
-  if (translationResult.status === 'fulfilled') {
-    turkish_translation = translationResult.value
-  } else {
-    errors.push(`Translation API: ${translationResult.reason?.message ?? 'Başarısız'}`)
+  if (selectedMode === 'ai') {
+    try {
+      const aiTrans = await fetchGeminiTranslation(trimmed)
+      if (aiTrans) {
+        turkish_translation = aiTrans
+      }
+    } catch { /* fallback to classic */ }
+  }
+
+  if (!turkish_translation) {
+    if (translationResult.status === 'fulfilled') {
+      turkish_translation = translationResult.value
+    } else {
+      errors.push(`Translation API: ${translationResult.reason?.message ?? 'Başarısız'}`)
+    }
   }
 
   if (dictResult.status !== 'fulfilled' && !definition) {
@@ -112,9 +143,10 @@ export async function fetchWordData(word, contextSentence = null) {
 }
 
 function pickBestDefinition(a, b) {
-  if (!a && !b) return null
-  if (!a) return b
-  if (!b) return a
+  const isJunk = (s) => !s || /\b(?:ISO\s*639|language code)\b/i.test(s)
+  if (isJunk(a) && isJunk(b)) return null
+  if (isJunk(a)) return b
+  if (isJunk(b)) return a
   const clean = (s) => s.replace(/^[a-z]/, c => c.toUpperCase()).trim()
   const scoreA = a.length + (a.match(/;|\(|\[/) ? 30 : 0)
   const scoreB = b.length + (b.match(/;|\(|\[/) ? 30 : 0)
@@ -235,6 +267,9 @@ async function fetchWiktionaryDefinition(word) {
         if (def.examples && def.examples.length > 0) {
           example = stripHtml(def.examples[0] ?? '')
         }
+
+        // Reject language codes, ISO codes, abbreviations
+        if (/\b(?:ISO\s*639|language code|initialism of|abbreviation of)\b/i.test(text)) continue
 
         if (text.length > 5) {
           if (!firstDefinition) firstDefinition = text
@@ -560,7 +595,7 @@ async function fetchGeminiSentence(word) {
   // Short, clear, simple, easy-to-memorize sentence prompt
   const prompt = `Write a short, simple, modern English example sentence (maximum 10 to 14 words) clearly using the word "${word}". Keep it natural and very easy to memorize for English learners. Do NOT write long or complex academic sentences. Do NOT use archaic words (like thou, didst, etc.). Return ONLY the sentence itself, without quotation marks, translation, markdown, or extra explanations.`
 
-  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+  const models = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-2.5-flash']
   for (const model of models) {
     try {
       const res = await fetchWithTimeout(
@@ -588,6 +623,71 @@ async function fetchGeminiSentence(word) {
         }
         if (/^[A-Z]/.test(clean) && !/\b(thou|thee|thy|thine|didst|doth|hath)\b/i.test(clean)) {
           return clean
+        }
+      }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+// ── Gemini AI Translation Generator (Top 4 Meanings) ─────────────────────────
+export async function fetchGeminiTranslation(word) {
+  let key = typeof GEMINI_API_KEY === 'string' ? GEMINI_API_KEY.trim() : ''
+  if (!key && typeof chrome !== 'undefined' && chrome.storage?.local) {
+    try {
+      const stored = await chrome.storage.local.get(['gemini_api_key'])
+      if (stored?.gemini_api_key) key = stored.gemini_api_key.trim()
+    } catch {}
+  }
+  if (!key || key.length < 8) return null
+
+  const prompt = `İngilizce "${word}" kelimesinin Türkçe'de en sık kullanılan ve en yaygın 4 temel karşılığını yaz.
+SADECE Türkçe karşılıkları aralarına virgül koyarak yaz.
+Format örneği: anlam1, anlam2, anlam3, anlam4
+Asla başlık, selamlama, numara veya İngilizce açıklama yazma.`
+
+  const models = ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.8-flash']
+  for (const model of models) {
+    try {
+      const res = await fetchWithTimeout(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+        6000,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 1000
+            }
+          })
+        }
+      )
+      if (!res.ok) continue
+      const data = await res.json()
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+      if (text) {
+        let clean = text.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').trim()
+        if (clean.includes(':')) {
+          clean = clean.slice(clean.lastIndexOf(':') + 1).trim()
+        }
+        clean = clean.replace(/^(top\s*\d+|here\s+are|turkish\s+meanings?|anlamlar|türkçe|karşılıklar)[^\n,;]*/gi, '').trim()
+
+        const parts = clean
+          .split(/[,;\n\r]+/)
+          .map(p => p.replace(/^\d+[\.\)\-:]\s*/, '').replace(/^[•\-\*]\s*/, '').replace(/^["'`]+|["'`]+$/g, '').trim())
+          .filter(p => {
+            if (!p || p.length < 2 || p.length > 40) return false
+            if (/^(top\s*\d|meaning|turkish|translation|words?|here\s+are|anlam|kelime)/i.test(p)) return false
+            if (/^(the|a|an|is|are|of|in|to)\b/i.test(p)) return false
+            return true
+          })
+
+        if (parts.length > 0) {
+          return parts.slice(0, 4).join(', ')
         }
       }
     } catch {
@@ -775,16 +875,16 @@ function generateFallbackSentence(word) {
 
 // ── Universal Sentence Resolver ───────────────────────────────────────────────
 async function resolveBestSentence(word, lemma = null, initialExample = null) {
-  // 1. Initial example (from dictionary or page selection) if valid, modern and not generic
+  // 1. Gemini AI (Primary source: always generates short, clean, memorable learner sentences)
+  const aiSentence = await fetchGeminiSentence(word)
+  if (aiSentence) return aiSentence
+
+  // 2. Initial example (from dictionary) if valid, modern and not generic
   if (initialExample && typeof initialExample === 'string' && isCleanModernSentence(initialExample)) {
     if (!initialExample.includes('is frequently used in academic and general contexts')) {
       return initialExample.trim()
     }
   }
-
-  // 2. Gemini AI
-  const aiSentence = await fetchGeminiSentence(word)
-  if (aiSentence) return aiSentence
 
   // 3. Wiktionary Wikitext usage examples
   const wiktUx = await fetchWiktionaryExample(word)

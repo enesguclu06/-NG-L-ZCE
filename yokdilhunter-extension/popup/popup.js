@@ -58,16 +58,70 @@ document.addEventListener('DOMContentLoaded', async () => {
     showLoginScreen();
   });
 
+  // ── Mode Switcher Logic ───────────────────────────────────────────────────
+  let currentMode = 'ai';
+  const btnModeAi = document.getElementById('btnModeAi');
+  const btnModeClassic = document.getElementById('btnModeClassic');
+  const currentModeLabel = document.getElementById('currentModeLabel');
+
+  function updateModeUI(mode) {
+    currentMode = mode;
+    if (mode === 'ai') {
+      btnModeAi?.classList.add('active');
+      btnModeClassic?.classList.remove('active');
+      if (currentModeLabel) {
+        currentModeLabel.textContent = '🤖 AI (4 Anlam)';
+        currentModeLabel.className = 'mode-badge-ai';
+      }
+    } else {
+      btnModeClassic?.classList.add('active');
+      btnModeAi?.classList.remove('active');
+      if (currentModeLabel) {
+        currentModeLabel.textContent = '⚡ Klasik Sözlük';
+        currentModeLabel.className = 'mode-badge-classic';
+      }
+    }
+  }
+
+  // Load saved mode & API Key
+  const geminiKeyInput = document.getElementById('geminiKeyInput');
+  const saveKeyBtn = document.getElementById('saveKeyBtn');
+
+  chrome.storage.local.get(['translation_mode', 'gemini_api_key'], (data) => {
+    updateModeUI(data?.translation_mode || 'ai');
+    if (data?.gemini_api_key && geminiKeyInput) {
+      geminiKeyInput.value = data.gemini_api_key;
+    }
+  });
+
+  saveKeyBtn?.addEventListener('click', () => {
+    const key = geminiKeyInput?.value?.trim() || '';
+    chrome.storage.local.set({ gemini_api_key: key }, () => {
+      saveKeyBtn.textContent = '✓';
+      setTimeout(() => { saveKeyBtn.textContent = 'Kaydet'; }, 1500);
+    });
+  });
+
+  btnModeAi?.addEventListener('click', () => {
+    updateModeUI('ai');
+    chrome.storage.local.set({ translation_mode: 'ai' });
+  });
+
+  btnModeClassic?.addEventListener('click', () => {
+    updateModeUI('classic');
+    chrome.storage.local.set({ translation_mode: 'classic' });
+  });
+
   // ── Manual Word Add ───────────────────────────────────────────────────────
   addBtn.addEventListener('click', () => {
     const word = manualWord.value.trim();
     if (!word) return;
 
     addBtn.disabled = true;
-    addError.textContent = 'Kaydediliyor...';
+    addError.textContent = currentMode === 'ai' ? '⏳ AI 4 anlam alınıyor...' : 'Kaydediliyor...';
     addError.style.color = '#94A3B8'; // Info color
 
-    chrome.runtime.sendMessage({ action: "manual_save", word: word }, (response) => {
+    chrome.runtime.sendMessage({ action: "manual_save", word: word, mode: currentMode }, (response) => {
       addBtn.disabled = false;
       if (response && response.success) {
         manualWord.value = '';

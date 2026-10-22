@@ -8,7 +8,22 @@ import { fetchTurkishPhonetic } from './phonetic.js'
  *   3. Datamuse API        → richer synonyms
  *   4. MyMemory + Google Translate informal API → Turkish translation
  */
-export async function fetchWordData(word, contextSentence = null) {
+export function getTranslationMode() {
+  if (typeof localStorage !== 'undefined') {
+    const mode = localStorage.getItem('yokdil_translation_mode')
+    if (mode === 'classic' || mode === 'ai') return mode
+  }
+  return 'ai'
+}
+
+export function setTranslationMode(mode) {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('yokdil_translation_mode', mode === 'classic' ? 'classic' : 'ai')
+  }
+}
+
+export async function fetchWordData(word, contextSentence = null, options = {}) {
+  const mode = typeof options === 'string' ? options : (options?.mode || getTranslationMode())
   const trimmed = word.trim().toLowerCase()
   const errors = []
 
@@ -100,12 +115,23 @@ export async function fetchWordData(word, contextSentence = null) {
   const datumuseSynonyms = datumuseResult.status === 'fulfilled' ? (datumuseResult.value ?? []) : []
   const synonyms = [...new Set([...datumuseSynonyms, ...dictSynonyms])].slice(0, 10)
 
-  // Translation
+  // Translation: AI 4-meanings if mode === 'ai', otherwise classic dictionary
   let turkish_translation = null
-  if (translationResult.status === 'fulfilled') {
-    turkish_translation = translationResult.value
-  } else {
-    errors.push(`Translation API: ${translationResult.reason?.message ?? 'Başarısız'}`)
+  if (mode === 'ai') {
+    try {
+      const aiTrans = await fetchGeminiTranslation(trimmed)
+      if (aiTrans) {
+        turkish_translation = aiTrans
+      }
+    } catch { /* fallback to classic */ }
+  }
+
+  if (!turkish_translation) {
+    if (translationResult.status === 'fulfilled') {
+      turkish_translation = translationResult.value
+    } else {
+      errors.push(`Translation API: ${translationResult.reason?.message ?? 'Başarısız'}`)
+    }
   }
 
   if (dictResult.status !== 'fulfilled' && !definition) {
@@ -117,9 +143,10 @@ export async function fetchWordData(word, contextSentence = null) {
 
 // Pick the cleaner/shorter definition between two sources
 function pickBestDefinition(a, b) {
-  if (!a && !b) return null
-  if (!a) return b
-  if (!b) return a
+  const isJunk = (s) => !s || /\b(?:ISO\s*639|language code)\b/i.test(s)
+  if (isJunk(a) && isJunk(b)) return null
+  if (isJunk(a)) return b
+  if (isJunk(b)) return a
   // Prefer the one that is shorter and doesn't start with a lowercase letter (avoids mid-sentence snippets)
   const clean = (s) => s.replace(/^[a-z]/, c => c.toUpperCase()).trim()
   const scoreA = a.length + (a.match(/;|\(|\[/) ? 30 : 0)  // penalise complex punctuation
@@ -242,6 +269,9 @@ async function fetchWiktionaryDefinition(word) {
           example = stripHtml(def.examples[0] ?? '')
         }
 
+        // Reject language codes, ISO codes, abbreviations
+        if (/\b(?:ISO\s*639|language code|initialism of|abbreviation of)\b/i.test(text)) continue
+
         if (text.length > 5) {
           if (!firstDefinition) firstDefinition = text
           if (example && !fallbackExample) fallbackExample = example
@@ -312,7 +342,7 @@ function isTransliteration(original, translated) {
 //   2. Wiktionary Turkish translations (community-curated, high quality)
 //   3. MyMemory
 // Returns up to 4 meanings as a comma-separated string.
-async function fetchTranslation(word) {
+export async function fetchTranslation(word) {
   const collected = []
 
   // All 3 in parallel
@@ -590,7 +620,7 @@ async function fetchGeminiSentence(word, apiKey) {
   const prompt = `Write a short, simple, modern English example sentence (maximum 10 to 14 words) clearly using the word "${word}". Keep it natural and very easy to memorize for English learners. Do NOT write long or complex academic sentences. Do NOT use archaic words (like thou, didst, etc.). Return ONLY the sentence itself, without quotation marks, translation, markdown, or extra explanations.`
 
   // Valid Google AI Studio models in fallback order
-  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+  const models = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-2.5-flash']
   for (const model of models) {
     try {
       const res = await fetchWithTimeout(
@@ -618,6 +648,65 @@ async function fetchGeminiSentence(word, apiKey) {
         }
         if (/^[A-Z]/.test(clean) && !/\b(thou|thee|thy|thine|didst|doth|hath)\b/i.test(clean)) {
           return clean
+        }
+      }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+// ── Gemini AI Translation Generator (Top 4 Meanings) ─────────────────────────
+export async function fetchGeminiTranslation(word, apiKey = null) {
+  const key = (apiKey || getGeminiApiKey() || '').trim()
+  if (!key || key.length < 8) return null
+
+  const prompt = `İngilizce "${word}" kelimesinin Türkçe'de en sık kullanılan ve en yaygın 4 temel karşılığını yaz.
+SADECE Türkçe karşılıkları aralarına virgül koyarak yaz.
+Format örneği: anlam1, anlam2, anlam3, anlam4
+Asla başlık, selamlama, numara veya İngilizce açıklama yazma.`
+
+  const models = ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.8-flash']
+  for (const model of models) {
+    try {
+      const res = await fetchWithTimeout(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+        6000,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 1000
+            }
+          })
+        }
+      )
+      if (!res.ok) continue
+      const data = await res.json()
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+      if (text) {
+        let clean = text.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').trim()
+        if (clean.includes(':')) {
+          clean = clean.slice(clean.lastIndexOf(':') + 1).trim()
+        }
+        clean = clean.replace(/^(top\s*\d+|here\s+are|turkish\s+meanings?|anlamlar|türkçe|karşılıklar)[^\n,;]*/gi, '').trim()
+
+        const parts = clean
+          .split(/[,;\n\r]+/)
+          .map(p => p.replace(/^\d+[\.\)\-:]\s*/, '').replace(/^[•\-\*]\s*/, '').replace(/^["'`]+|["'`]+$/g, '').trim())
+          .filter(p => {
+            if (!p || p.length < 2 || p.length > 40) return false
+            if (/^(top\s*\d|meaning|turkish|translation|words?|here\s+are|anlam|kelime)/i.test(p)) return false
+            if (/^(the|a|an|is|are|of|in|to)\b/i.test(p)) return false
+            return true
+          })
+
+        if (parts.length > 0) {
+          return parts.slice(0, 4).join(', ')
         }
       }
     } catch {
@@ -811,18 +900,18 @@ function generateFallbackSentence(word) {
 
 // ── Universal Sentence Resolver ───────────────────────────────────────────────
 async function resolveBestSentence(word, lemma = null, initialExample = null) {
-  // 1. Initial example (from dictionary or page selection) if valid, modern and not a generic fallback
-  if (initialExample && typeof initialExample === 'string' && isCleanModernSentence(initialExample)) {
-    if (!initialExample.includes('is frequently used in academic and general contexts')) {
-      return initialExample.trim()
-    }
-  }
-
-  // 2. Gemini AI (Highest quality, context-aware short sentence)
+  // 1. Gemini AI (Highest quality, context-aware short sentence)
   const geminiKey = getGeminiApiKey()
   if (geminiKey) {
     const aiSentence = await fetchGeminiSentence(word, geminiKey)
     if (aiSentence) return aiSentence
+  }
+
+  // 2. Initial example (from dictionary) if valid, modern and not a generic fallback
+  if (initialExample && typeof initialExample === 'string' && isCleanModernSentence(initialExample)) {
+    if (!initialExample.includes('is frequently used in academic and general contexts')) {
+      return initialExample.trim()
+    }
   }
 
   // 3. Wiktionary Wikitext usage examples

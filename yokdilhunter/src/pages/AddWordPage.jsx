@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchWordData } from '../lib/api'
+import { fetchWordData, getTranslationMode, setTranslationMode, fetchGeminiTranslation, fetchTranslation } from '../lib/api'
 import { playAudio } from '../lib/audio'
 import { useWords } from '../hooks/useWords'
 import { useDecks } from '../hooks/useDecks'
@@ -21,6 +21,8 @@ export default function AddWordPage() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [apiErrors, setApiErrors] = useState([])
   const [saving, setSaving] = useState(false)
+  const [translationMode, setTranslationModeState] = useState(getTranslationMode)
+  const [switchingTrans, setSwitchingTrans] = useState(false)
 
   const { addWord } = useWords()
   const { decks, fetchDecks } = useDecks()
@@ -29,6 +31,11 @@ export default function AddWordPage() {
   useEffect(() => {
     fetchDecks()
   }, [fetchDecks])
+
+  function handleModeChange(mode) {
+    setTranslationModeState(mode)
+    setTranslationMode(mode)
+  }
 
   // ── Fetch word data from APIs ──────────────────────────────────
   async function handleSearch(e) {
@@ -41,7 +48,7 @@ export default function AddWordPage() {
     setApiErrors([])
 
     try {
-      const result = await fetchWordData(word)
+      const result = await fetchWordData(word, null, { mode: translationMode })
       setPreview(result)
       setForm({
         english_word: result.english_word,
@@ -86,6 +93,35 @@ export default function AddWordPage() {
     }
   }
 
+  async function handleSwitchTranslation(targetMode) {
+    const word = form.english_word.trim()
+    if (!word || switchingTrans) return
+    setSwitchingTrans(true)
+    try {
+      if (targetMode === 'ai') {
+        const aiTrans = await fetchGeminiTranslation(word)
+        if (aiTrans) {
+          setForm(f => ({ ...f, turkish_translation: aiTrans }))
+          showToast('✨ AI tarafından en sık kullanılan 4 anlam getirildi', 'success')
+        } else {
+          showToast('AI çevirisi alınamadı (Gemini API anahtarını kontrol edin)', 'error')
+        }
+      } else {
+        const classicTrans = await fetchTranslation(word)
+        if (classicTrans) {
+          setForm(f => ({ ...f, turkish_translation: classicTrans }))
+          showToast('⚡ Klasik sözlük çevirisi getirildi', 'success')
+        } else {
+          showToast('Klasik sözlük çevirisi bulunamadı', 'error')
+        }
+      }
+    } catch (err) {
+      showToast(err.message || 'Çeviri getirilemedi', 'error')
+    } finally {
+      setSwitchingTrans(false)
+    }
+  }
+
   function handleDiscard() {
     setPreview(null)
     setForm(EMPTY_FORM)
@@ -100,9 +136,53 @@ export default function AddWordPage() {
       <Toast {...toast} onClose={clearToast} />
 
       {/* ── Header ── */}
-      <div className="mb-6 animate-fade-up">
+      <div className="mb-4 animate-fade-up">
         <h2 className="text-2xl font-black text-white">Kelime Ekle</h2>
-        <p className="text-slate-400 text-sm mt-1">İngilizce kelimeyi yaz, otomatik çevirisini getir</p>
+        <p className="text-slate-400 text-sm mt-1">İngilizce kelimeyi yaz, seçtiğin sistemle çevir ve kaydet</p>
+      </div>
+
+      {/* ── Translation Mode Selector ── */}
+      <div className="mb-5 p-3.5 rounded-2xl bg-base-800/80 border border-white/[0.08] backdrop-blur-md animate-fade-up">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+            <span>⚙️</span> Çeviri & Kayıt Sistemi:
+          </span>
+          <span className="text-[11px] text-slate-400 font-medium">
+            {translationMode === 'ai' ? '🤖 AI Destekli (4 Anlam)' : '⚡ Klasik Sözlük'}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => handleModeChange('ai')}
+            className={`p-2.5 rounded-xl border text-left transition-all flex items-start gap-2.5 ${
+              translationMode === 'ai'
+                ? 'bg-gradient-to-r from-primary-600/30 to-indigo-600/30 border-primary-500/60 shadow-glow-primary text-white'
+                : 'bg-base-900/40 border-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            <span className="text-lg leading-none mt-0.5">✨</span>
+            <div>
+              <div className="text-xs font-bold">Yeni Sistem (AI)</div>
+              <div className="text-[10px] opacity-80 leading-tight mt-0.5">En çok kullanılan 4 temel anlamı kaydeder</div>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleModeChange('classic')}
+            className={`p-2.5 rounded-xl border text-left transition-all flex items-start gap-2.5 ${
+              translationMode === 'classic'
+                ? 'bg-gradient-to-r from-amber-600/25 to-orange-600/25 border-amber-500/60 shadow-glow-orange text-white'
+                : 'bg-base-900/40 border-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            <span className="text-lg leading-none mt-0.5">⚡</span>
+            <div>
+              <div className="text-xs font-bold">Eski Sistem (Sözlük)</div>
+              <div className="text-[10px] opacity-80 leading-tight mt-0.5">Google Translate & standart sözlük çevirisi</div>
+            </div>
+          </button>
+        </div>
       </div>
 
       {/* ── Search Box ── */}
@@ -195,12 +275,35 @@ export default function AddWordPage() {
           {/* Editable fields */}
           <div className="space-y-4">
             <Field label="Türkçe Çeviri" id="field-translation">
+              <div className="flex items-center gap-1.5 mb-2">
+                <button
+                  type="button"
+                  disabled={switchingTrans}
+                  onClick={() => handleSwitchTranslation('ai')}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-primary-500/15 text-primary-300 border border-primary-500/30 hover:bg-primary-500/25 transition-all flex items-center gap-1 disabled:opacity-50"
+                  title="Gemini AI ile en yaygın 4 anlamı getir"
+                >
+                  <span>✨</span> AI (4 Anlam)
+                </button>
+                <button
+                  type="button"
+                  disabled={switchingTrans}
+                  onClick={() => handleSwitchTranslation('classic')}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition-all flex items-center gap-1 disabled:opacity-50"
+                  title="Klasik sözlük çevirisi getir"
+                >
+                  <span>⚡</span> Klasik Sözlük
+                </button>
+                {switchingTrans && (
+                  <span className="text-[11px] text-slate-400 animate-pulse ml-1">Getiriliyor...</span>
+                )}
+              </div>
               <input
                 id="input-translation"
                 className="input-base"
                 value={form.turkish_translation}
                 onChange={e => setForm(f => ({ ...f, turkish_translation: e.target.value }))}
-                placeholder="Türkçe karşılığı..."
+                placeholder="Türkçe karşılığı (örn: anlam1, anlam2, anlam3, anlam4)"
               />
             </Field>
 

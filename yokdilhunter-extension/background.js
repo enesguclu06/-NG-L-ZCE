@@ -183,7 +183,7 @@ function validateClipboardWord(text) {
 // ── Message Listener (from popup or content) ──────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "manual_save") {
-    processAndSaveWord(message.word, null, null, message.context_sentence)
+    processAndSaveWord(message.word, null, null, message.context_sentence, message.mode)
       .then(result => sendResponse({ success: true, result }))
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
@@ -200,7 +200,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 
 // ── Core Save Logic ─────────────────────────────────────────────────────────
-async function processAndSaveWord(text, tabId, url, contextSentence = null) {
+async function processAndSaveWord(text, tabId, url, contextSentence = null, mode = null) {
   const word = text.trim().toLowerCase();
   
   if (word.split(' ').length > 4) {
@@ -222,13 +222,11 @@ async function processAndSaveWord(text, tabId, url, contextSentence = null) {
       throw new Error(`"${word}" zaten kütüphanende! 📚`);
     }
 
-    // Fetch definitions, translations and example sentences (with contextSentence if available)
-    const data = await fetchWordData(word, contextSentence);
+    // Fetch definitions, translations and example sentences (with mode if available)
+    const data = await fetchWordData(word, null, mode);
 
-    // Prioritize the real page sentence if captured, otherwise fallback to enriched API sentence
-    const finalExampleSentence = (contextSentence && typeof contextSentence === 'string' && contextSentence.trim().length >= 10)
-      ? contextSentence.trim()
-      : data.example_sentence;
+    // Always use the AI-generated example sentence
+    const finalExampleSentence = data.example_sentence;
 
     // Save to Supabase
     await saveWord({

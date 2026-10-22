@@ -5,6 +5,14 @@
 
 let tooltip = null;
 let currentWord = '';
+let activeSaveMode = 'ai';
+
+// Initialize translation mode from storage
+if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+  chrome.storage.local.get(['translation_mode'], (data) => {
+    if (data?.translation_mode) activeSaveMode = data.translation_mode;
+  });
+}
 
 // ── Helper: Extract surrounding sentence around range or text ───────────────
 function extractSentenceAroundRange(range, word) {
@@ -168,8 +176,30 @@ function showTooltip(word, rect, contextSentence = null) {
   tooltip.innerHTML = `
     <div class="ydh-word">${escHtml(word)}</div>
     <div class="ydh-translation ydh-loading">çeviriliyor...</div>
+    <div class="ydh-mode-container">
+      <span class="ydh-mode-label">Kayıt:</span>
+      <div class="ydh-mode-pills">
+        <button type="button" class="ydh-pill ${activeSaveMode === 'ai' ? 'ydh-pill-active' : ''}" data-mode="ai">✨ AI (4 Anlam)</button>
+        <button type="button" class="ydh-pill ${activeSaveMode === 'classic' ? 'ydh-pill-active' : ''}" data-mode="classic">⚡ Klasik</button>
+      </div>
+    </div>
     <button class="ydh-save-btn" disabled>💾 Kaydet</button>
   `;
+
+  // Handle mode pill switching
+  const pills = tooltip.querySelectorAll('.ydh-pill');
+  pills.forEach(pill => {
+    pill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const mode = pill.getAttribute('data-mode');
+      activeSaveMode = mode;
+      pills.forEach(p => p.classList.remove('ydh-pill-active'));
+      pill.classList.add('ydh-pill-active');
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        chrome.storage.local.set({ translation_mode: mode });
+      }
+    });
+  });
 
   // Position above the selection
   const scrollX = window.scrollX;
@@ -191,7 +221,7 @@ function showTooltip(word, rect, contextSentence = null) {
   // Animate in
   requestAnimationFrame(() => tooltip.classList.add('ydh-visible'));
 
-  // Fetch translation from background
+  // Fetch fast translation from background (eski sistemle hızlıca gösterir)
   chrome.runtime.sendMessage({ action: 'translate', word }, (response) => {
     if (chrome.runtime.lastError) {
       console.error('Translation error:', chrome.runtime.lastError);
@@ -211,7 +241,7 @@ function showTooltip(word, rect, contextSentence = null) {
       transEl.textContent = response.translation;
       transEl.classList.remove('ydh-loading');
       saveBtn.disabled = false;
-      saveBtn.addEventListener('click', () => saveWord(word, saveBtn, contextSentence));
+      saveBtn.addEventListener('click', () => saveWord(word, saveBtn, contextSentence, activeSaveMode));
     } else {
       transEl.textContent = response?.error || 'çeviri bulunamadı';
       transEl.classList.remove('ydh-loading');
@@ -221,14 +251,15 @@ function showTooltip(word, rect, contextSentence = null) {
 }
 
 // ── Save word ──────────────────────────────────────────────────────────────
-function saveWord(word, btn, contextSentence = null) {
+function saveWord(word, btn, contextSentence = null, mode = 'ai') {
   btn.disabled = true;
-  btn.textContent = '⏳ Kaydediliyor...';
+  btn.textContent = mode === 'ai' ? '⏳ AI 4 Anlam Alınıyor...' : '⏳ Kaydediliyor...';
 
   chrome.runtime.sendMessage({
     action: 'manual_save',
     word,
-    context_sentence: contextSentence
+    context_sentence: contextSentence,
+    mode: mode
   }, (response) => {
     if (!tooltip) return;
     if (response?.success) {
@@ -310,6 +341,44 @@ function injectStyles() {
     }
     .ydh-loading { color: #64748b; font-style: italic; }
     .ydh-error   { color: #f87171; }
+    .ydh-mode-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      padding-top: 4px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .ydh-mode-label {
+      font-size: 10px;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+    .ydh-mode-pills {
+      display: flex;
+      gap: 3px;
+    }
+    .ydh-pill {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 5px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.05);
+      color: #94a3b8;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s ease;
+    }
+    .ydh-pill:hover {
+      color: #f1f5f9;
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .ydh-pill-active {
+      background: rgba(99, 102, 241, 0.3) !important;
+      border-color: rgba(99, 102, 241, 0.6) !important;
+      color: #c7d2fe !important;
+      font-weight: 600;
+    }
     .ydh-save-btn {
       width: 100%;
       padding: 5px 10px;
