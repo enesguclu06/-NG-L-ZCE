@@ -620,7 +620,15 @@ async function fetchGeminiSentence(word, apiKey) {
   const prompt = `Write a short, simple, modern English example sentence (maximum 10 to 14 words) clearly using the word "${word}". Keep it natural and very easy to memorize for English learners. Do NOT write long or complex academic sentences. Do NOT use archaic words (like thou, didst, etc.). Return ONLY the sentence itself, without quotation marks, translation, markdown, or extra explanations.`
 
   // Valid Google AI Studio models in fallback order
-  const models = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-2.5-flash']
+  const models = [
+    'gemini-3.5-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash'
+  ]
   for (const model of models) {
     try {
       const res = await fetchWithTimeout(
@@ -667,12 +675,20 @@ SADECE Türkçe karşılıkları aralarına virgül koyarak yaz.
 Format örneği: anlam1, anlam2, anlam3, anlam4
 Asla başlık, selamlama, numara veya İngilizce açıklama yazma.`
 
-  const models = ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.8-flash']
+  const models = [
+    'gemini-3.5-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash'
+  ]
   for (const model of models) {
     try {
       const res = await fetchWithTimeout(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
-        6000,
+        5000,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

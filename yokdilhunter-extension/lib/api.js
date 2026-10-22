@@ -581,21 +581,42 @@ export function isCleanModernSentence(text) {
   return true
 }
 
-// ── Gemini AI Sentence Generator ──────────────────────────────────────────────
-async function fetchGeminiSentence(word) {
-  let key = typeof GEMINI_API_KEY === 'string' ? GEMINI_API_KEY.trim() : ''
-  if (!key && typeof chrome !== 'undefined' && chrome.storage?.local) {
+// ── Gemini Key Resolution ─────────────────────────────────────────────────────
+async function getEffectiveGeminiKey(explicitKey = null) {
+  if (explicitKey && typeof explicitKey === 'string' && explicitKey.trim().length >= 8) {
+    return explicitKey.trim()
+  }
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
     try {
       const stored = await chrome.storage.local.get(['gemini_api_key'])
-      if (stored?.gemini_api_key) key = stored.gemini_api_key.trim()
+      if (stored?.gemini_api_key && stored.gemini_api_key.trim().length >= 8) {
+        return stored.gemini_api_key.trim()
+      }
     } catch {}
   }
-  if (!key || key.length < 8) return null
+  if (typeof GEMINI_API_KEY === 'string' && GEMINI_API_KEY.trim().length >= 8) {
+    return GEMINI_API_KEY.trim()
+  }
+  return ''
+}
+
+// ── Gemini AI Sentence Generator ──────────────────────────────────────────────
+async function fetchGeminiSentence(word) {
+  const key = await getEffectiveGeminiKey()
+  if (!key) return null
 
   // Short, clear, simple, easy-to-memorize sentence prompt
   const prompt = `Write a short, simple, modern English example sentence (maximum 10 to 14 words) clearly using the word "${word}". Keep it natural and very easy to memorize for English learners. Do NOT write long or complex academic sentences. Do NOT use archaic words (like thou, didst, etc.). Return ONLY the sentence itself, without quotation marks, translation, markdown, or extra explanations.`
 
-  const models = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-2.5-flash']
+  const models = [
+    'gemini-3.5-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash'
+  ]
   for (const model of models) {
     try {
       const res = await fetchWithTimeout(
@@ -633,27 +654,32 @@ async function fetchGeminiSentence(word) {
 }
 
 // ── Gemini AI Translation Generator (Top 4 Meanings) ─────────────────────────
-export async function fetchGeminiTranslation(word) {
-  let key = typeof GEMINI_API_KEY === 'string' ? GEMINI_API_KEY.trim() : ''
-  if (!key && typeof chrome !== 'undefined' && chrome.storage?.local) {
-    try {
-      const stored = await chrome.storage.local.get(['gemini_api_key'])
-      if (stored?.gemini_api_key) key = stored.gemini_api_key.trim()
-    } catch {}
+export async function fetchGeminiTranslation(word, apiKey = null) {
+  const key = await getEffectiveGeminiKey(apiKey)
+  if (!key) {
+    console.warn('[YDH Extension] Gemini API key not found in storage or config!')
+    return null
   }
-  if (!key || key.length < 8) return null
 
   const prompt = `İngilizce "${word}" kelimesinin Türkçe'de en sık kullanılan ve en yaygın 4 temel karşılığını yaz.
 SADECE Türkçe karşılıkları aralarına virgül koyarak yaz.
 Format örneği: anlam1, anlam2, anlam3, anlam4
 Asla başlık, selamlama, numara veya İngilizce açıklama yazma.`
 
-  const models = ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.8-flash']
+  const models = [
+    'gemini-3.5-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash'
+  ]
   for (const model of models) {
     try {
       const res = await fetchWithTimeout(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
-        6000,
+        5000,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -687,7 +713,9 @@ Asla başlık, selamlama, numara veya İngilizce açıklama yazma.`
           })
 
         if (parts.length > 0) {
-          return parts.slice(0, 4).join(', ')
+          const result = parts.slice(0, 4).join(', ')
+          console.log(`[YDH Extension] Gemini AI translation for "${word}": ${result}`)
+          return result
         }
       }
     } catch {
