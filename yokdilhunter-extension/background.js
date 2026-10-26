@@ -306,7 +306,8 @@ async function notify(tabId, message) {
             zIndex: '2147483647',
             pointerEvents: 'none'
           });
-          document.body.appendChild(toast);
+          const container = document.fullscreenElement || document.webkitFullscreenElement || document.body;
+          container.appendChild(toast);
           setTimeout(() => toast.remove(), 3500);
         },
         args: [message]
