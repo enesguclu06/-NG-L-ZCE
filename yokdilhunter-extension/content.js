@@ -39,35 +39,78 @@ function getAppRoot() {
          document.body;
 }
 
-// ── Subtitle Candidate Selectors ────────────────────────────────────────────
+// ── Helper: Detect if an element is a Player Control, Menu, or Settings UI ────
+function isPlayerControlOrUI(el) {
+  if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+
+  // Never match our own tooltip, toast, or subtitle bar
+  if (el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip') ||
+      el.id === 'ydh-notification-toast' ||
+      el.id === 'ydh-sub-translation-bar') {
+    return false;
+  }
+
+  // Interactive HTML elements & ARIA widgets
+  if (el.closest?.('button, a, input, select, textarea, [role="button"], [role="menu"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [role="tablist"], [role="dialog"], [role="slider"], [role="toolbar"], [role="listbox"]')) {
+    return true;
+  }
+
+  // Specific player controls, settings dropdowns, audio/subtitle pickers
+  if (el.closest?.(`
+    [class*="control"],
+    [class*="settings"],
+    [class*="setting"],
+    [class*="menu"],
+    [class*="panel"],
+    [class*="picker"],
+    [class*="dropdown"],
+    [class*="popup"],
+    [class*="flyout"],
+    [class*="tray"],
+    [class*="scrubber"],
+    [class*="progressbar"],
+    [class*="bottompanel"],
+    [class*="title-container"],
+    .ytp-chrome-bottom,
+    .ytp-chrome-top,
+    .ytp-settings-menu,
+    .ytp-panel,
+    .ytp-popup,
+    .ytp-menuitem,
+    .atvwebplayersdk-controls-wrapper,
+    .atvwebplayersdk-bottompanel-container,
+    .atvwebplayersdk-title-container,
+    .webPlayerUIContainer,
+    [data-uia*="control"],
+    [data-uia*="menu"],
+    [data-uia*="audio-subtitle"],
+    [data-uia*="selector"]
+  `)) {
+    return true;
+  }
+
+  return false;
+}
+
+// ── Subtitle Candidate Selectors (Strict Subtitle Text Containers Only) ─────
 const SUBTITLE_SELECTORS = [
-  // Amazon Prime Video
+  // Amazon Prime Video subtitle text containers
   '.timedTextBackground',
   '.timedTextOutput',
-  '[class*="timedText"]',
-  '[class*="timed-text"]',
-  '.atvwebplayersdk-captions-overlay',
-  '.atvwebplayersdk-captions-overlay *',
-  '[class*="captions-overlay"]',
-  // Netflix
+  '.timedTextOutput span',
+  '.atvwebplayersdk-captions-overlay .timedTextOutput',
+  '.atvwebplayersdk-captions-overlay span',
+  // Netflix subtitle text containers
   '.player-timedtext',
   '.player-timedtext-text-container',
-  '[data-uia*="timed-text"]',
-  // YouTube
+  '.player-timedtext-text-container span',
+  // YouTube subtitle text segments
   '.ytp-caption-segment',
-  '.caption-window',
-  '.ytp-caption-window-bottom',
-  // Disney+, Hulu, HBO Max / Max, Apple TV
+  // Disney+, Hulu, HBO Max
   '.dss-subtitle-renderer-line',
-  '[class*="subtitle-renderer"]',
-  '[class*="Subtitle"]',
-  '[class*="subtitle"]',
-  '[class*="Caption"]',
-  '[class*="caption"]',
-  // Video.js, HTML5 cues, media players
-  '.vjs-text-track-display',
-  '[aria-label*="subtitles" i]',
-  '[aria-label*="captions" i]'
+  // Video.js text track cues
+  '.vjs-text-track-display .vjs-text-track-cue',
+  '::cue'
 ];
 
 // ── Helper: Extract surrounding sentence around range or text ───────────────
@@ -219,9 +262,17 @@ function isElementOverVideo(el, video) {
 
 // ── Subtitle-Specific Word Extractor ────────────────────────────────────────
 function extractSubtitleWordAtPoint(x, y) {
+  // If pointer is over ANY player control or settings menu, ABORT immediately!
+  if (document.elementsFromPoint) {
+    const topElements = document.elementsFromPoint(x, y);
+    for (const el of topElements) {
+      if (isPlayerControlOrUI(el)) return null;
+    }
+  }
+
   const video = findAssociatedVideo(x, y);
 
-  // Strategy 1: Check known subtitle/caption elements across streaming platforms
+  // Strategy 1: Check known subtitle/caption elements
   const searchRoots = [document];
   try {
     const allCustom = document.querySelectorAll('*');
@@ -234,9 +285,9 @@ function extractSubtitleWordAtPoint(x, y) {
     try {
       const candidates = root.querySelectorAll(SUBTITLE_SELECTORS.join(','));
       for (const el of candidates) {
-        if (!el) continue;
+        if (!el || isPlayerControlOrUI(el)) continue;
         const rect = el.getBoundingClientRect();
-        if (x >= rect.left - 12 && x <= rect.right + 12 && y >= rect.top - 12 && y <= rect.bottom + 12) {
+        if (x >= rect.left - 8 && x <= rect.right + 8 && y >= rect.top - 8 && y <= rect.bottom + 8) {
           const match = findWordInElementAt(el, x, y);
           if (match) return { ...match, isSubtitle: true, video };
         }
@@ -244,35 +295,18 @@ function extractSubtitleWordAtPoint(x, y) {
     } catch {}
   }
 
-  // Strategy 2: Penetrate transparent overlays using document.elementsFromPoint(x, y)
+  // Strategy 2: Penetrate transparent video overlay shields
   if (document.elementsFromPoint) {
     const elements = document.elementsFromPoint(x, y);
     for (const el of elements) {
       if (!el || el.tagName === 'HTML' || el.tagName === 'BODY' || el.tagName === 'VIDEO') continue;
-      if (el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip') || el.id === 'ydh-notification-toast') continue;
+      if (isPlayerControlOrUI(el)) return null;
+      if (el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip') || el.id === 'ydh-notification-toast' || el.id === 'ydh-sub-translation-bar') continue;
 
-      const isSubEl = el.matches?.(SUBTITLE_SELECTORS.join(',')) ||
-                      el.closest?.(SUBTITLE_SELECTORS.join(',')) ||
-                      (video && isElementOverVideo(el, video));
+      const isSubEl = el.matches?.(SUBTITLE_SELECTORS.join(',')) || el.closest?.(SUBTITLE_SELECTORS.join(','));
       if (isSubEl) {
         const match = findWordInElementAt(el, x, y);
         if (match) return { ...match, isSubtitle: true, video };
-      }
-    }
-  }
-
-  // Strategy 3: Elements overlapping any active <video>
-  if (video) {
-    const parent = video.parentElement;
-    if (parent) {
-      const textNodes = parent.querySelectorAll('span, div, p');
-      for (const el of textNodes) {
-        if (el.tagName === 'VIDEO' || el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip')) continue;
-        const rect = el.getBoundingClientRect();
-        if (x >= rect.left - 6 && x <= rect.right + 6 && y >= rect.top - 6 && y <= rect.bottom + 6) {
-          const match = findWordInElementAt(el, x, y);
-          if (match) return { ...match, isSubtitle: true, video };
-        }
       }
     }
   }
@@ -282,6 +316,14 @@ function extractSubtitleWordAtPoint(x, y) {
 
 // ── General Word Extractor At Point (x, y) ──────────────────────────────────
 function extractWordAtPoint(x, y) {
+  // If player control or settings menu, ignore
+  if (document.elementsFromPoint) {
+    const topElements = document.elementsFromPoint(x, y);
+    for (const el of topElements) {
+      if (isPlayerControlOrUI(el)) return null;
+    }
+  }
+
   // Try subtitle extraction first
   const subMatch = extractSubtitleWordAtPoint(x, y);
   if (subMatch) return subMatch;
@@ -291,7 +333,8 @@ function extractWordAtPoint(x, y) {
     const elements = document.elementsFromPoint(x, y);
     for (const el of elements) {
       if (!el || el.tagName === 'HTML' || el.tagName === 'BODY' || el.tagName === 'VIDEO') continue;
-      if (el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip') || el.id === 'ydh-notification-toast') continue;
+      if (isPlayerControlOrUI(el)) continue;
+      if (el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip') || el.id === 'ydh-notification-toast' || el.id === 'ydh-sub-translation-bar') continue;
       const match = findWordInElementAt(el, x, y);
       if (match) return match;
     }
@@ -301,6 +344,7 @@ function extractWordAtPoint(x, y) {
   if (document.caretRangeFromPoint) {
     const range = document.caretRangeFromPoint(x, y);
     if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+      if (isPlayerControlOrUI(range.startContainer.parentElement)) return null;
       const text = range.startContainer.nodeValue;
       let start = range.startOffset;
       let end = start;
@@ -487,12 +531,12 @@ function scanAndShowDualSubtitle() {
     return;
   }
 
-  // 1. Check known subtitle candidate selectors
+  // 1. Check known subtitle candidate selectors (strict)
   const candidates = document.querySelectorAll(SUBTITLE_SELECTORS.join(','));
   let activeEl = null;
 
   for (const el of candidates) {
-    if (!el || el.id === 'ydh-sub-translation-bar' || el.closest?.('#ydh-sub-translation-bar') || el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip')) continue;
+    if (!el || isPlayerControlOrUI(el) || el.id === 'ydh-sub-translation-bar' || el.closest?.('#ydh-sub-translation-bar') || el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip')) continue;
     const rect = el.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight) {
       const text = (el.innerText || el.textContent || '').trim();
@@ -500,32 +544,6 @@ function scanAndShowDualSubtitle() {
         activeEl = el;
         break;
       }
-    }
-  }
-
-  // 2. Check video overlay texts if not found
-  if (!activeEl) {
-    const videos = document.querySelectorAll('video');
-    for (const v of videos) {
-      const vRect = v.getBoundingClientRect();
-      if (vRect.width > 0 && vRect.height > 0) {
-        const parent = v.parentElement;
-        if (parent) {
-          const spans = parent.querySelectorAll('span, p, div');
-          for (const s of spans) {
-            if (s.tagName === 'VIDEO' || s.id === 'ydh-sub-translation-bar' || s.closest?.('#ydh-sub-translation-bar') || s.id === 'ydh-tooltip' || s.closest?.('#ydh-tooltip')) continue;
-            const sRect = s.getBoundingClientRect();
-            if (sRect.top > vRect.top + vRect.height * 0.45 && sRect.bottom <= vRect.bottom + 40 && sRect.left >= vRect.left - 20 && sRect.right <= vRect.right + 20) {
-              const text = (s.innerText || s.textContent || '').trim();
-              if (text.length >= 2 && /[a-zA-Z]/.test(text) && !text.includes('0:') && !text.includes('1:')) {
-                activeEl = s;
-                break;
-              }
-            }
-          }
-        }
-      }
-      if (activeEl) break;
     }
   }
 
@@ -544,7 +562,8 @@ function scanAndShowDualSubtitle() {
 window.addEventListener('mousemove', (e) => {
   if (activeSubtitleMode !== 'hover') return;
 
-  if (tooltip && tooltip.classList.contains('ydh-visible')) {
+  // If hovering over player controls, settings menu, or our own tooltip, abort!
+  if (isPlayerControlOrUI(e.target) || (tooltip && tooltip.classList.contains('ydh-visible'))) {
     hideSubBar();
     return;
   }
@@ -593,6 +612,9 @@ window.addEventListener('click', (e) => {
   // If clicked inside our tooltip, let tooltip buttons handle it
   if (tooltip && tooltip.contains(e.target)) return;
 
+  // IMPORTANT: If user clicked on a player control, button, settings menu, language picker, or interactive element, IGNORE!
+  if (isPlayerControlOrUI(e.target)) return;
+
   // 1. DIRECT LEFT CLICK ON SUBTITLES (No Alt key needed!)
   if (!e.altKey && !e.shiftKey && !e.ctrlKey) {
     const subData = extractSubtitleWordAtPoint(e.clientX, e.clientY);
@@ -635,6 +657,7 @@ window.addEventListener('click', (e) => {
 
 // ── Listen for Alt+RightClick (Direct Save) ──────────────────────────────────
 window.addEventListener('contextmenu', (e) => {
+  if (isPlayerControlOrUI(e.target)) return;
   if (e.altKey && !e.shiftKey && !e.ctrlKey) {
     const data = extractWordAtPoint(e.clientX, e.clientY);
     if (data?.word) {
@@ -1026,18 +1049,12 @@ function injectStyles() {
     }
     .ydh-save-btn:disabled { opacity: 0.5; cursor: default; }
 
-    /* Video subtitles are always interactive and show pointer cursor on hover */
-    .timedTextBackground,
-    .timedTextOutput,
-    [class*="timedText"],
-    [class*="timed-text"],
-    .atvwebplayersdk-captions-overlay,
-    .atvwebplayersdk-captions-overlay *,
-    .player-timedtext,
-    .player-timedtext *,
+    /* Only actual subtitle text spans are interactive with pointer cursor */
+    .timedTextBackground span,
+    .timedTextOutput span,
+    .player-timedtext-text-container span,
     .ytp-caption-segment,
-    [class*="subtitle"],
-    [class*="caption"] {
+    .dss-subtitle-renderer-line {
       cursor: pointer !important;
       user-select: text !important;
       -webkit-user-select: text !important;
