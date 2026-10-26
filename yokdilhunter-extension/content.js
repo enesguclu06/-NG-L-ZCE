@@ -13,10 +13,8 @@ let activeSubtitleMode = 'hover'; // 'hover' | 'dual' | 'off'
 if (typeof chrome !== 'undefined' && chrome.storage?.local) {
   chrome.storage.local.get(['translation_mode', 'subtitle_mode'], (data) => {
     if (data?.translation_mode) activeSaveMode = data.translation_mode;
-    if (data?.subtitle_mode) {
-      activeSubtitleMode = data.subtitle_mode;
-      handleSubtitleModeChange();
-    }
+    activeSubtitleMode = data?.subtitle_mode || 'hover';
+    handleSubtitleModeChange();
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -46,7 +44,27 @@ function isPlayerControlOrUI(el) {
   // Never match our own tooltip, toast, or subtitle bar
   if (el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip') ||
       el.id === 'ydh-notification-toast' ||
-      el.id === 'ydh-sub-translation-bar') {
+      el.id === 'ydh-sub-translation-bar' ||
+      el.closest?.('#ydh-sub-translation-bar')) {
+    return false;
+  }
+
+  // Never match actual subtitles!
+  if (el.closest?.(`
+    .atvwebplayersdk-captions-overlay,
+    .timedTextOutput,
+    .timedTextBackground,
+    [class*="timedText"],
+    [class*="captions-overlay"],
+    .player-timedtext,
+    .player-timedtext-text-container,
+    .ytp-caption-window-bottom,
+    .caption-window,
+    .ytp-caption-segment,
+    .dss-subtitle-renderer-line,
+    .vjs-text-track-cue,
+    .vjs-text-track-display
+  `)) {
     return false;
   }
 
@@ -70,7 +88,6 @@ function isPlayerControlOrUI(el) {
     [class*="scrubber"],
     [class*="progressbar"],
     [class*="bottompanel"],
-    [class*="title-container"],
     .ytp-chrome-bottom,
     .ytp-chrome-top,
     .ytp-settings-menu,
@@ -79,8 +96,6 @@ function isPlayerControlOrUI(el) {
     .ytp-menuitem,
     .atvwebplayersdk-controls-wrapper,
     .atvwebplayersdk-bottompanel-container,
-    .atvwebplayersdk-title-container,
-    .webPlayerUIContainer,
     [data-uia*="control"],
     [data-uia*="menu"],
     [data-uia*="audio-subtitle"],
@@ -92,25 +107,52 @@ function isPlayerControlOrUI(el) {
   return false;
 }
 
-// ── Subtitle Candidate Selectors (Strict Subtitle Text Containers Only) ─────
+// ── Subtitle Candidate Selectors (Strict Subtitle Text Spans & Containers) ─────
 const SUBTITLE_SELECTORS = [
-  // Amazon Prime Video subtitle text containers
+  // Amazon Prime Video subtitle text containers & spans
+  '.timedTextBackground span',
+  '.timedTextOutput span',
   '.timedTextBackground',
   '.timedTextOutput',
-  '.timedTextOutput span',
-  '.atvwebplayersdk-captions-overlay .timedTextOutput',
   '.atvwebplayersdk-captions-overlay span',
+  '.atvwebplayersdk-captions-overlay .timedTextOutput',
   // Netflix subtitle text containers
-  '.player-timedtext',
-  '.player-timedtext-text-container',
   '.player-timedtext-text-container span',
+  '.player-timedtext-text-container',
+  '.player-timedtext',
   // YouTube subtitle text segments
   '.ytp-caption-segment',
   // Disney+, Hulu, HBO Max
   '.dss-subtitle-renderer-line',
-  // Video.js text track cues
+  // Video.js text track cues & generic
   '.vjs-text-track-display .vjs-text-track-cue',
-  '::cue'
+  '.vjs-text-track-cue'
+];
+
+// Full subtitle cue containers for dual & hover subtitle sentence detection
+const SUBTITLE_CONTAINER_SELECTORS = [
+  // Amazon Prime Video
+  '.atvwebplayersdk-captions-overlay .timedTextOutput',
+  '.atvwebplayersdk-captions-overlay .timedTextBackground',
+  '.atvwebplayersdk-captions-overlay',
+  '.timedTextOutput',
+  '.timedTextBackground',
+  '[class*="timedTextOutput"]',
+  '[class*="timedTextBackground"]',
+  // YouTube
+  '.ytp-caption-window-bottom',
+  '.caption-window',
+  '.ytp-caption-segment',
+  // Netflix
+  '.player-timedtext-text-container',
+  '.player-timedtext',
+  // Disney+, Hulu, HBO Max
+  '.dss-subtitle-renderer-line',
+  // Generic HTML5 / Video.js
+  '.vjs-text-track-display .vjs-text-track-cue',
+  '.vjs-text-track-cue',
+  '[class*="player-timedtext"]',
+  '[class*="captions-text"]'
 ];
 
 // ── Helper: Extract surrounding sentence around range or text ───────────────
@@ -416,6 +458,106 @@ function getSentenceTranslation(sentence) {
   });
 }
 
+// ── Subtitle Active Cue Detector (Prime Video, YouTube, Netflix, Disney+, HTML5) ──
+function findActiveSubtitleCue() {
+  const searchRoots = [document];
+  try {
+    const allCustom = document.querySelectorAll('*');
+    for (let i = 0; i < allCustom.length; i++) {
+      if (allCustom[i].shadowRoot) searchRoots.push(allCustom[i].shadowRoot);
+    }
+  } catch {}
+
+  const visibleCandidates = [];
+
+  for (const root of searchRoots) {
+    try {
+      const elements = root.querySelectorAll(SUBTITLE_CONTAINER_SELECTORS.join(','));
+      for (const el of elements) {
+        if (!el || isPlayerControlOrUI(el)) continue;
+        if (el.id === 'ydh-sub-translation-bar' || el.closest?.('#ydh-sub-translation-bar')) continue;
+        if (el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip')) continue;
+
+        const rect = el.getBoundingClientRect();
+        // Element must be visibly rendered within the viewport
+        if (rect.width > 20 && rect.height > 8 && rect.bottom > 0 && rect.top < window.innerHeight) {
+          const raw = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+          // Must have at least 2 chars, letters, and not be timecode like "01:23"
+          if (raw.length >= 2 && /[a-zA-Z]/.test(raw) && !/^\d+:\d+/.test(raw)) {
+            visibleCandidates.push({ el, text: raw, rect });
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // Fallback: check native HTML5 video text tracks
+  if (visibleCandidates.length === 0) {
+    try {
+      const videos = document.querySelectorAll('video');
+      for (const v of videos) {
+        if (!v.paused && v.textTracks) {
+          for (let i = 0; i < v.textTracks.length; i++) {
+            const track = v.textTracks[i];
+            if (track.mode === 'showing' && track.activeCues && track.activeCues.length > 0) {
+              const cue = track.activeCues[0];
+              const text = (cue.text || '').replace(/<[^>]+>/g, '').trim();
+              if (text.length >= 2 && /[a-zA-Z]/.test(text)) {
+                const vRect = v.getBoundingClientRect();
+                return {
+                  el: v,
+                  text,
+                  rect: {
+                    top: vRect.bottom - 95,
+                    bottom: vRect.bottom - 45,
+                    left: vRect.left + vRect.width * 0.15,
+                    right: vRect.left + vRect.width * 0.85,
+                    width: vRect.width * 0.7,
+                    height: 50
+                  }
+                };
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+    return null;
+  }
+
+  // Prefer the element with the most complete text (container rather than a tiny child span)
+  visibleCandidates.sort((a, b) => b.text.length - a.text.length);
+  const best = visibleCandidates[0];
+
+  // Calculate the composite bounding box encompassing related subtitle segments
+  let minTop = best.rect.top;
+  let maxBottom = best.rect.bottom;
+  let minLeft = best.rect.left;
+  let maxRight = best.rect.right;
+
+  for (const item of visibleCandidates) {
+    if (best.text.includes(item.text)) {
+      minTop = Math.min(minTop, item.rect.top);
+      maxBottom = Math.max(maxBottom, item.rect.bottom);
+      minLeft = Math.min(minLeft, item.rect.left);
+      maxRight = Math.max(maxRight, item.rect.right);
+    }
+  }
+
+  return {
+    el: best.el,
+    text: best.text,
+    rect: {
+      top: minTop,
+      bottom: maxBottom,
+      left: minLeft,
+      right: maxRight,
+      width: maxRight - minLeft,
+      height: maxBottom - minTop
+    }
+  };
+}
+
 // ── Subtitle Translation Bar Management ─────────────────────────────────────
 let subBar = null;
 let currentSubSentence = '';
@@ -428,7 +570,7 @@ function getSubBar() {
   if (!bar) {
     bar = document.createElement('div');
     bar.id = 'ydh-sub-translation-bar';
-    bar.innerHTML = `<span class="ydh-sub-flag">🇹🇷</span><span class="ydh-sub-text"></span>`;
+    bar.innerHTML = `<span class="ydh-sub-text"></span>`;
     container.appendChild(bar);
   }
   return bar;
@@ -442,34 +584,39 @@ function hideSubBar() {
 }
 
 function updateSubBarPosition(bar, anchorRect, container) {
-  let top, left;
-  if (container === document.body) {
-    const scrollX = window.scrollX || 0;
-    const scrollY = window.scrollY || 0;
-    top = anchorRect.bottom + scrollY + 8;
-    left = anchorRect.left + scrollX + anchorRect.width / 2;
-  } else {
-    const cRect = container.getBoundingClientRect();
-    top = anchorRect.bottom - cRect.top + container.scrollTop + 8;
-    left = anchorRect.left - cRect.left + container.scrollLeft + anchorRect.width / 2;
-  }
+  if (!bar || !anchorRect) return;
 
-  // If bottom is near the bottom edge of screen/video, flip directly above
+  const isBody = (container === document.body);
+  const scrollX = isBody ? (window.scrollX || 0) : 0;
+  const scrollY = isBody ? (window.scrollY || 0) : 0;
+  const cRect = isBody ? { top: 0, left: 0 } : container.getBoundingClientRect();
+  const cScrollTop = isBody ? 0 : container.scrollTop;
+  const cScrollLeft = isBody ? 0 : container.scrollLeft;
+
+  // Horizontally centered directly with the English subtitle line
+  const left = anchorRect.left - cRect.left + scrollX + cScrollLeft + (anchorRect.width / 2);
+
+  // Vertical placement: place below if room, flip directly above if near bottom edge
   const viewportHeight = window.innerHeight;
-  if (anchorRect.bottom > viewportHeight - 48) {
-    if (container === document.body) {
-      top = anchorRect.top + (window.scrollY || 0) - 38;
-    } else {
-      const cRect = container.getBoundingClientRect();
-      top = anchorRect.top - cRect.top + container.scrollTop - 38;
-    }
+  const distFromBottom = viewportHeight - anchorRect.bottom;
+
+  let top;
+  let translateY = '0';
+  if (distFromBottom < 75) {
+    // Too close to viewport bottom: place cleanly above the English subtitle
+    top = anchorRect.top - cRect.top + scrollY + cScrollTop - 10;
+    translateY = '-100%';
+  } else {
+    // Standard: place directly below the English subtitle
+    top = anchorRect.bottom - cRect.top + scrollY + cScrollTop + 8;
+    translateY = '0';
   }
 
   Object.assign(bar.style, {
     position: 'absolute',
-    top: `${top}px`,
-    left: `${left}px`,
-    transform: 'translateX(-50%)',
+    top: `${Math.round(top)}px`,
+    left: `${Math.round(left)}px`,
+    transform: `translate(-50%, ${translateY})`,
     zIndex: '2147483646',
   });
 }
@@ -484,6 +631,7 @@ function showSubBar(sentence, anchorRect, isDual = false) {
   const textEl = subBar.querySelector('.ydh-sub-text');
   const container = getAppRoot();
 
+  // If already displaying this exact sentence, just re-verify position
   if (currentSubSentence === sentence && subBar.classList.contains('ydh-sub-visible')) {
     updateSubBarPosition(subBar, anchorRect, container);
     return;
@@ -495,12 +643,13 @@ function showSubBar(sentence, anchorRect, isDual = false) {
     textEl.textContent = sentenceCache.get(sentence);
     textEl.classList.remove('ydh-sub-loading');
   } else {
-    textEl.textContent = 'çeviriliyor...';
+    textEl.textContent = '...';
     textEl.classList.add('ydh-sub-loading');
     getSentenceTranslation(sentence).then((tr) => {
       if (currentSubSentence === sentence && subBar) {
         textEl.textContent = tr || sentence;
         textEl.classList.remove('ydh-sub-loading');
+        updateSubBarPosition(subBar, anchorRect, container);
       }
     });
   }
@@ -516,14 +665,21 @@ function handleSubtitleModeChange() {
   }
 
   if (activeSubtitleMode === 'dual') {
-    dualSubTimer = setInterval(scanAndShowDualSubtitle, 200);
+    scanAndShowDualSubtitle();
+    dualSubTimer = setInterval(scanAndShowDualSubtitle, 180);
   } else {
     hideSubBar();
   }
 }
 
 function scanAndShowDualSubtitle() {
-  if (activeSubtitleMode !== 'dual') return;
+  if (activeSubtitleMode !== 'dual') {
+    if (dualSubTimer) {
+      clearInterval(dualSubTimer);
+      dualSubTimer = null;
+    }
+    return;
+  }
 
   // Don't show if word translation tooltip is open
   if (tooltip && tooltip.classList.contains('ydh-visible')) {
@@ -531,31 +687,16 @@ function scanAndShowDualSubtitle() {
     return;
   }
 
-  // 1. Check known subtitle candidate selectors (strict)
-  const candidates = document.querySelectorAll(SUBTITLE_SELECTORS.join(','));
-  let activeEl = null;
-
-  for (const el of candidates) {
-    if (!el || isPlayerControlOrUI(el) || el.id === 'ydh-sub-translation-bar' || el.closest?.('#ydh-sub-translation-bar') || el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip')) continue;
-    const rect = el.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight) {
-      const text = (el.innerText || el.textContent || '').trim();
-      if (text.length >= 2 && /[a-zA-Z]/.test(text)) {
-        activeEl = el;
-        break;
-      }
+  try {
+    const sub = findActiveSubtitleCue();
+    if (sub && sub.text) {
+      showSubBar(sub.text, sub.rect, true);
+    } else {
+      hideSubBar();
     }
+  } catch (err) {
+    hideSubBar();
   }
-
-  if (activeEl) {
-    const rawText = (activeEl.innerText || activeEl.textContent || '').replace(/\s+/g, ' ').trim();
-    if (rawText && rawText.length >= 2 && /[a-zA-Z]/.test(rawText)) {
-      showSubBar(rawText, activeEl.getBoundingClientRect(), true);
-      return;
-    }
-  }
-
-  hideSubBar();
 }
 
 // ── Hover Mode Mouse Listener ───────────────────────────────────────────────
@@ -568,13 +709,34 @@ window.addEventListener('mousemove', (e) => {
     return;
   }
 
+  // 1. Check if hovering over the active subtitle block
+  const activeSub = findActiveSubtitleCue();
+  if (activeSub) {
+    const r = activeSub.rect;
+    const isOverSub = (
+      e.clientX >= r.left - 25 &&
+      e.clientX <= r.right + 25 &&
+      e.clientY >= r.top - 25 &&
+      e.clientY <= r.bottom + 25
+    );
+
+    if (isOverSub) {
+      if (hoverHideTimeout) {
+        clearTimeout(hoverHideTimeout);
+        hoverHideTimeout = null;
+      }
+      showSubBar(activeSub.text, activeSub.rect, false);
+      return;
+    }
+  }
+
+  // 2. Secondary fallback via point-based subtitle extraction
   const subData = extractSubtitleWordAtPoint(e.clientX, e.clientY);
   if (subData?.sentence) {
     if (hoverHideTimeout) {
       clearTimeout(hoverHideTimeout);
       hoverHideTimeout = null;
     }
-
     const anchorRect = subData.rect || {
       top: e.clientY - 15,
       bottom: e.clientY + 15,
@@ -583,15 +745,16 @@ window.addEventListener('mousemove', (e) => {
       width: 40,
       height: 30
     };
-
     showSubBar(subData.sentence, anchorRect, false);
-  } else {
-    if (!hoverHideTimeout && subBar && subBar.classList.contains('ydh-sub-visible')) {
-      hoverHideTimeout = setTimeout(() => {
-        hideSubBar();
-        hoverHideTimeout = null;
-      }, 300);
-    }
+    return;
+  }
+
+  // If moved outside subtitle zone, gracefully hide after 350ms
+  if (!hoverHideTimeout && subBar && subBar.classList.contains('ydh-sub-visible')) {
+    hoverHideTimeout = setTimeout(() => {
+      hideSubBar();
+      hoverHideTimeout = null;
+    }, 350);
   }
 }, { passive: true });
 
@@ -1060,44 +1223,55 @@ function injectStyles() {
       -webkit-user-select: text !important;
     }
 
-    /* Subtitle Sentence Translation Bar */
+    /* Subtitle Sentence Translation Bar (True Cinema Subtitle Style) */
     #ydh-sub-translation-bar {
       display: inline-flex;
+      justify-content: center;
       align-items: center;
-      background: rgba(15, 23, 42, 0.94);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 1px solid rgba(99, 102, 241, 0.45);
-      border-radius: 8px;
-      padding: 6px 14px;
-      color: #f8fafc;
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      font-size: 14px;
-      font-weight: 500;
-      line-height: 1.35;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7), 0 0 12px rgba(99, 102, 241, 0.25);
-      max-width: 82vw;
+      position: absolute;
+      max-width: 90vw;
       text-align: center;
       opacity: 0;
       pointer-events: none;
-      transition: opacity 0.18s ease;
       user-select: none;
+      -webkit-user-select: none;
+      transition: opacity 0.15s ease-out;
+      z-index: 2147483646;
     }
     #ydh-sub-translation-bar.ydh-sub-visible {
       opacity: 1;
     }
-    .ydh-sub-flag {
-      font-size: 13px;
-      margin-right: 7px;
-      flex-shrink: 0;
-    }
     .ydh-sub-text {
-      color: #e0e7ff;
-      text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+      display: inline-block;
+      background: rgba(0, 0, 0, 0.82);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      color: #ffeb3b; /* Cinema Subtitle Yellow */
+      font-family: 'YouTube Noto', Roboto, 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+      font-size: clamp(20px, 2.4vw, 30px);
+      font-weight: 700;
+      line-height: 1.35;
+      padding: 5px 18px;
+      border-radius: 6px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+      text-shadow:
+        0 0 3px #000,
+        0 0 6px #000,
+        -1.5px -1.5px 0 #000,
+         1.5px -1.5px 0 #000,
+        -1.5px  1.5px 0 #000,
+         1.5px  1.5px 0 #000;
+      letter-spacing: 0.015em;
+      text-align: center;
+      max-width: 86vw;
+      word-wrap: break-word;
     }
-    .ydh-sub-loading {
-      color: #94a3b8;
+    .ydh-sub-text.ydh-sub-loading {
+      color: #fde047;
+      opacity: 0.85;
       font-style: italic;
+      font-size: clamp(16px, 1.8vw, 22px);
+      padding: 3px 14px;
     }
   `;
 
