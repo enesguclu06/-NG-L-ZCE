@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { fetchWordData, getTranslationMode, setTranslationMode, fetchGeminiTranslation, fetchTranslation } from '../lib/api'
 import { playAudio } from '../lib/audio'
 import { useWords } from '../hooks/useWords'
@@ -15,6 +15,7 @@ const EMPTY_FORM = {
 }
 
 export default function AddWordPage() {
+  const searchInputRef = useRef(null)
   const [searchWord, setSearchWord] = useState('')
   const [fetching, setFetching] = useState(false)
   const [preview, setPreview] = useState(null)
@@ -23,6 +24,7 @@ export default function AddWordPage() {
   const [saving, setSaving] = useState(false)
   const [translationMode, setTranslationModeState] = useState(getTranslationMode)
   const [switchingTrans, setSwitchingTrans] = useState(false)
+  const [backgroundTasks, setBackgroundTasks] = useState([])
 
   const { addWord } = useWords()
   const { decks, fetchDecks } = useDecks()
@@ -67,6 +69,57 @@ export default function AddWordPage() {
       setForm({ ...EMPTY_FORM, english_word: word })
     } finally {
       setFetching(false)
+    }
+  }
+
+  // ── Direct / Background Quick-Add (No waiting, non-blocking) ──
+  async function handleQuickAdd() {
+    const word = searchWord.trim()
+    if (!word) return
+
+    // Immediately clear input and keep focus so user doesn't wait
+    setSearchWord('')
+    if (searchInputRef.current) {
+      searchInputRef.current.focus()
+    }
+
+    const taskId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const newTask = {
+      id: taskId,
+      word,
+      status: 'loading',
+      errorMsg: null,
+    }
+
+    setBackgroundTasks(prev => [newTask, ...prev])
+    showToast(`"${word}" arka planda ekleniyor... ⏳`, 'info')
+
+    try {
+      const result = await fetchWordData(word, null, { mode: translationMode })
+      await addWord({
+        english_word: result.english_word || word,
+        phonetic: result.phonetic ?? '',
+        definition: result.definition ?? '',
+        synonyms: result.synonyms ?? [],
+        turkish_translation: result.turkish_translation ?? '',
+        example_sentence: result.example_sentence ?? '',
+        deck_id: '',
+      })
+
+      setBackgroundTasks(prev =>
+        prev.map(t => (t.id === taskId ? { ...t, status: 'success' } : t))
+      )
+      showToast(`"${word}" başarıyla kaydedildi! 🎉`, 'success')
+
+      // Auto dismiss success badge after 5s
+      setTimeout(() => {
+        setBackgroundTasks(prev => prev.filter(t => t.id !== taskId))
+      }, 5000)
+    } catch (err) {
+      setBackgroundTasks(prev =>
+        prev.map(t => (t.id === taskId ? { ...t, status: 'error', errorMsg: err.message } : t))
+      )
+      showToast(err.message || `"${word}" kaydedilemedi!`, 'error')
     }
   }
 
@@ -185,32 +238,92 @@ export default function AddWordPage() {
         </div>
       </div>
 
-      {/* ── Search Box ── */}
-      <form onSubmit={handleSearch} className="flex gap-3 mb-6 animate-fade-up">
+      {/* ── Search Box & Quick Add ── */}
+      <form onSubmit={handleSearch} className="flex gap-2 sm:gap-3 mb-3 animate-fade-up">
         <input
+          ref={searchInputRef}
           id="input-search-word"
           type="text"
           value={searchWord}
           onChange={e => setSearchWord(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && (e.shiftKey || e.ctrlKey || e.altKey)) {
+              e.preventDefault()
+              handleQuickAdd()
+            }
+          }}
           className="input-base flex-1"
-          placeholder="Kelime veya ifade yaz (örn. ephemeral)"
+          placeholder="Kelime yaz (örn: ephemeral)..."
           disabled={fetching}
         />
         <button
           id="btn-search-word"
           type="submit"
           disabled={fetching || !searchWord.trim()}
-          className="btn-primary shrink-0 px-5"
+          className="btn-primary shrink-0 px-4 flex items-center justify-center gap-1.5"
+          title="Kelimeyi ara ve önizle / düzenle"
         >
           {fetching ? (
             <LoadingSpinner />
           ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-            </svg>
+            <>
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+              </svg>
+              <span className="hidden sm:inline font-semibold text-sm">Ara</span>
+            </>
           )}
         </button>
+        <button
+          id="btn-quick-add"
+          type="button"
+          onClick={handleQuickAdd}
+          disabled={!searchWord.trim()}
+          className="px-4 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
+          title="Arka planda beklemeden direkt kaydet (Shift/Ctrl + Enter)"
+        >
+          <span className="text-base leading-none">⚡</span>
+          <span className="font-bold text-xs sm:text-sm">Direkt Ekle</span>
+        </button>
       </form>
+
+      {/* ── Background Task Statuses ── */}
+      {backgroundTasks.length > 0 && (
+        <div className="mb-4 space-y-2 animate-fade-up">
+          {backgroundTasks.map(task => (
+            <div
+              key={task.id}
+              className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-sm backdrop-blur-md transition-all shadow-sm ${
+                task.status === 'loading'
+                  ? 'bg-primary-950/40 border-primary-500/30 text-primary-200'
+                  : task.status === 'success'
+                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200'
+                  : 'bg-rose-950/40 border-rose-500/30 text-rose-200'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                {task.status === 'loading' && <LoadingSpinner size="sm" />}
+                {task.status === 'success' && <span className="text-base leading-none">✅</span>}
+                {task.status === 'error' && <span className="text-base leading-none">❌</span>}
+                <span className="font-bold text-white capitalize truncate">{task.word}</span>
+                <span className="text-xs opacity-80 truncate">
+                  {task.status === 'loading' && 'Arka planda çevrilip ekleniyor...'}
+                  {task.status === 'success' && 'Başarıyla kaydedildi! 🎉'}
+                  {task.status === 'error' && (task.errorMsg || 'Kaydedilemedi')}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBackgroundTasks(prev => prev.filter(t => t.id !== task.id))}
+                className="text-xs opacity-50 hover:opacity-100 p-1 ml-2 transition-opacity"
+                title="Kapat"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Loading State ── */}
       {fetching && (
