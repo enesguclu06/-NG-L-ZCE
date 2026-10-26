@@ -770,50 +770,73 @@ document.addEventListener('webkitfullscreenchange', () => {
   handleSubtitleModeChange();
 });
 
-// ── Click Handler: Direct Click on Subtitles or Alt+Click Everywhere ───────
-window.addEventListener('click', (e) => {
-  // If clicked inside our tooltip, let tooltip buttons handle it
-  if (tooltip && tooltip.contains(e.target)) return;
+// ── Word Card Trigger Helper (Pauses Video & Opens Save Popup) ───────────────
+function triggerWordCard(clientX, clientY) {
+  const data = extractWordAtPoint(clientX, clientY);
+  if (!data?.word) return false;
 
-  // IMPORTANT: If user clicked on a player control, button, settings menu, language picker, or interactive element, IGNORE!
-  if (isPlayerControlOrUI(e.target)) return;
+  window.getSelection()?.removeAllRanges();
 
-  // 1. DIRECT LEFT CLICK ON SUBTITLES (No Alt key needed!)
-  if (!e.altKey && !e.shiftKey && !e.ctrlKey) {
-    const subData = extractSubtitleWordAtPoint(e.clientX, e.clientY);
-    if (subData?.word) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation?.();
-      window.getSelection()?.removeAllRanges();
-
-      // Automatically pause video so the subtitle stays visible while reading definition!
-      if (subData.video && !subData.video.paused) {
-        try { subData.video.pause(); } catch {}
-      }
-
-      const rect = subData.rect || { top: e.clientY - 15, left: e.clientX - 20, width: 40, height: 30 };
-      showTooltip(subData.word, rect, subData.sentence);
-      return;
-    }
+  // Durdursun: pause video if playing
+  const video = data.video || findAssociatedVideo(clientX, clientY);
+  if (video && !video.paused) {
+    try { video.pause(); } catch {}
   }
 
-  // 2. Alt + Left Click anywhere on the web (articles, documents, normal paragraphs)
-  if (e.altKey && !e.shiftKey && !e.ctrlKey) {
+  const rect = data.rect || { top: clientY - 15, left: clientX - 20, width: 40, height: 30 };
+  showTooltip(data.word, rect, data.sentence);
+  return true;
+}
+
+// ── Scroll Wheel / Middle Click (Button 1): Pause & Open Save Card ──────────
+// 1. Prevent browser autoscroll mode on mousedown
+window.addEventListener('mousedown', (e) => {
+  if (e.button === 1) { // Middle click / Scroll wheel click
+    if (isPlayerControlOrUI(e.target)) return;
     const data = extractWordAtPoint(e.clientX, e.clientY);
     if (data?.word) {
       e.preventDefault();
       e.stopPropagation();
+    }
+  }
+}, true);
+
+// 2. Open card on auxclick / mouseup with debounce
+let lastMiddleClickTime = 0;
+function handleMiddleClick(e) {
+  if (e.button !== 1) return;
+  if (tooltip && tooltip.contains(e.target)) return;
+  if (isPlayerControlOrUI(e.target)) return;
+
+  const now = Date.now();
+  if (now - lastMiddleClickTime < 350) return;
+
+  const handled = triggerWordCard(e.clientX, e.clientY);
+  if (handled) {
+    lastMiddleClickTime = now;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation?.();
+  }
+}
+
+window.addEventListener('auxclick', handleMiddleClick, true);
+window.addEventListener('mouseup', (e) => {
+  if (e.button === 1) handleMiddleClick(e);
+}, true);
+
+// ── Alt + Left Click (Button 0): Alternative for Trackpads / Laptops ─────────
+window.addEventListener('click', (e) => {
+  // If clicked inside our tooltip, let tooltip buttons handle it
+  if (tooltip && tooltip.contains(e.target)) return;
+  if (isPlayerControlOrUI(e.target)) return;
+
+  if (e.altKey && !e.shiftKey && !e.ctrlKey && e.button === 0) {
+    const handled = triggerWordCard(e.clientX, e.clientY);
+    if (handled) {
+      e.preventDefault();
+      e.stopPropagation();
       e.stopImmediatePropagation?.();
-      window.getSelection()?.removeAllRanges();
-
-      if (data.video && !data.video.paused) {
-        try { data.video.pause(); } catch {}
-      }
-
-      const rect = data.rect || { top: e.clientY - 15, left: e.clientX - 20, width: 40, height: 30 };
-      showTooltip(data.word, rect, data.sentence);
-      return;
     }
   }
 }, true);
