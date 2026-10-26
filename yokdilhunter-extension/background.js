@@ -214,7 +214,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(err => sendResponse({ error: err.message }));
     return true;
   }
+
+  if (message.action === "translate_sentence") {
+    fetchSentenceTranslation(message.sentence)
+      .then(translation => sendResponse({ translation }))
+      .catch(err => sendResponse({ error: err.message }));
+    return true;
+  }
 });
+
+// ── Google Translate Sentence Engine ────────────────────────────────────────
+async function fetchSentenceTranslation(sentence) {
+  if (!sentence || typeof sentence !== 'string') return '';
+  const trimmed = sentence.trim();
+  if (!trimmed) return '';
+
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=tr&dt=t&q=${encodeURIComponent(trimmed)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (Array.isArray(data?.[0])) {
+      const result = data[0].map(segment => segment?.[0]).filter(Boolean).join('');
+      return result.trim();
+    }
+  } catch (err) {
+    console.warn("Sentence translation failed:", err);
+  }
+  return '';
+}
 
 
 // ── Core Save Logic ─────────────────────────────────────────────────────────

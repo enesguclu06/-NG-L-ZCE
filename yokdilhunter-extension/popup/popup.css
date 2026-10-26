@@ -280,3 +280,36 @@ input:focus {
 .mode-btn.active .mode-btn-text small {
   color: #94A3B8;
 }
+
+.sub-mode-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 5px;
+}
+
+.sub-pill {
+  padding: 6px 4px;
+  background: #0F172A;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #94A3B8;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.sub-pill:hover {
+  background: #1a2438;
+  color: #E2E8F0;
+}
+
+.sub-pill.active {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: rgba(99, 102, 241, 0.65);
+  color: #C7D2FE;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.25);
+}
+

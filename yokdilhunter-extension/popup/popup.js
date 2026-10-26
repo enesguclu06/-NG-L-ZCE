@@ -112,6 +112,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.storage.local.set({ translation_mode: 'classic' });
   });
 
+  // ── Subtitle Translation Mode Logic ───────────────────────────────────────
+  let currentSubMode = 'hover';
+  const btnSubHover = document.getElementById('btnSubHover');
+  const btnSubDual = document.getElementById('btnSubDual');
+  const btnSubOff = document.getElementById('btnSubOff');
+  const currentSubModeLabel = document.getElementById('currentSubModeLabel');
+
+  function updateSubModeUI(mode) {
+    currentSubMode = mode;
+    btnSubHover?.classList.toggle('active', mode === 'hover');
+    btnSubDual?.classList.toggle('active', mode === 'dual');
+    btnSubOff?.classList.toggle('active', mode === 'off');
+
+    if (currentSubModeLabel) {
+      if (mode === 'hover') {
+        currentSubModeLabel.textContent = '👆 Hover';
+        currentSubModeLabel.className = 'mode-badge-ai';
+      } else if (mode === 'dual') {
+        currentSubModeLabel.textContent = '🔄 Çift Altyazı';
+        currentSubModeLabel.className = 'mode-badge-ai';
+      } else {
+        currentSubModeLabel.textContent = '🚫 Kapalı';
+        currentSubModeLabel.className = 'mode-badge-classic';
+      }
+    }
+  }
+
+  function setSubMode(mode) {
+    chrome.storage.local.set({ subtitle_mode: mode }, () => {
+      updateSubModeUI(mode);
+    });
+  }
+
+  btnSubHover?.addEventListener('click', () => setSubMode('hover'));
+  btnSubDual?.addEventListener('click', () => setSubMode('dual'));
+  btnSubOff?.addEventListener('click', () => setSubMode('off'));
+
+  chrome.storage.local.get(['subtitle_mode'], (data) => {
+    updateSubModeUI(data?.subtitle_mode || 'hover');
+  });
+
   // ── Manual Word Add ───────────────────────────────────────────────────────
   addBtn.addEventListener('click', () => {
     const word = manualWord.value.trim();
