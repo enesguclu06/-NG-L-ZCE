@@ -236,27 +236,46 @@
 
   // 3. Block Prime Video's default 'A' (Audio & Subtitles tray) shortcut in MAIN world
   function isInputActive(target) {
-    if (!target) return false;
-    const tag = (target.tagName || '').toUpperCase();
-    return (
-      tag === 'INPUT' ||
-      tag === 'TEXTAREA' ||
-      target.isContentEditable ||
-      target.closest?.('input, textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"]')
-    );
+    const activeEl = document.activeElement;
+    const t = target || activeEl;
+    if (!t) return false;
+    const tag = (t.tagName || '').toUpperCase();
+    const activeTag = (activeEl?.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return true;
+    if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeEl?.isContentEditable) return true;
+    if (t.closest?.('input, textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"], #ydh-tooltip')) return true;
+    if (activeEl?.closest?.('input, textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"], #ydh-tooltip')) return true;
+    return false;
   }
+
+  let lastInterceptionPostTime = 0;
 
   function handleNavKeyInMainWorld(e) {
     if (e.ctrlKey || e.altKey || e.metaKey) return;
     if (isInputActive(e.target || document.activeElement)) return;
 
-    const key = (e.key || '').toLowerCase();
+    let key = (e.key || '').toLowerCase();
+    if (!key) {
+      if (e.code === 'KeyA') key = 'a';
+      else if (e.code === 'KeyD') key = 'd';
+      else if (e.code === 'KeyS') key = 's';
+    }
+
     if (key === 'a' || key === 'd' || key === 's') {
-      const hasVideo = document.querySelector('video');
+      const hasVideo = document.querySelector('video') || document.getElementById('movie_player')?.querySelector('video');
       if (hasVideo) {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
+
+        // Forward to content.js on keydown so it executes the jump!
+        if (e.type === 'keydown') {
+          const now = Date.now();
+          if (now - lastInterceptionPostTime > 80) {
+            lastInterceptionPostTime = now;
+            window.postMessage({ from: 'ydh_interceptor', action: 'nav_key', key }, '*');
+          }
+        }
       }
     }
   }
@@ -268,3 +287,4 @@
   document.addEventListener('keypress', handleNavKeyInMainWorld, true);
   document.addEventListener('keyup', handleNavKeyInMainWorld, true);
 })();
+

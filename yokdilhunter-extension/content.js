@@ -791,8 +791,9 @@ function updateSubBarPosition(bar, anchorRect, container) {
 let preloadedSourceCues = [];
 let officialTurkishCues = [];
 let lastPreWarmTime = -1;
+let lastNavKeyTime = 0;
 
-// Receive intercepted subtitle tracks from interceptor.js (MAIN world)
+// Receive intercepted subtitle tracks and navigation keys from interceptor.js (MAIN world)
 window.addEventListener('message', (event) => {
   if (event.source !== window || !event.data || event.data.from !== 'ydh_interceptor') return;
   if (event.data.action === 'cues_loaded') {
@@ -803,6 +804,8 @@ window.addEventListener('message', (event) => {
       const v = document.querySelector('video');
       preWarmUpcomingCues(v?.currentTime || 0);
     }
+  } else if (event.data.action === 'nav_key') {
+    handleNavKey(event.data.key);
   }
 });
 
@@ -1353,7 +1356,8 @@ function showNavToast(message) {
     container.appendChild(toast);
   }
 
-  toast.textContent = message;
+  const cleanMsg = message.length > 60 ? (message.slice(0, 57) + '...') : message;
+  toast.textContent = cleanMsg;
   toast.classList.add('ydh-nav-visible');
 
   if (navToastTimeout) clearTimeout(navToastTimeout);
@@ -1363,20 +1367,52 @@ function showNavToast(message) {
   }, 1200);
 }
 
+
 function closePrimeVideoAudioPanel() {
   try {
-    const openPanel = document.querySelector(`
-      .atvwebplayersdk-bottompanel-container,
-      [class*="bottompanel-container"],
+    const dialogs = document.querySelectorAll(`
       .atvwebplayersdk-subtitles-overlay,
-      [class*="subtitles-overlay"]
+      [class*="subtitles-overlay"],
+      [data-testid*="subtitles"],
+      [data-testid*="audio-subtitles"]
     `);
-    if (openPanel) {
-      const closeBtn = openPanel.querySelector('button[aria-label*="close" i], button[aria-label*="kapat" i], .close-button');
+    dialogs.forEach(dialog => {
+      const closeBtn = dialog.querySelector('button[aria-label*="close" i], button[aria-label*="kapat" i], .close-button');
       if (closeBtn) closeBtn.click();
-      else openPanel.style.display = 'none';
-    }
+    });
   } catch {}
+}
+
+function isInputActive(target) {
+  const activeEl = document.activeElement;
+  const t = target || activeEl;
+  if (!t) return false;
+  const tag = (t.tagName || '').toUpperCase();
+  const activeTag = (activeEl?.tagName || '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return true;
+  if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeEl?.isContentEditable) return true;
+  if (t.closest?.('input, textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"], #ydh-tooltip')) return true;
+  if (activeEl?.closest?.('input, textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"], #ydh-tooltip')) return true;
+  return false;
+}
+
+function handleNavKey(key) {
+  if (!key) return;
+  if (isInputActive(document.activeElement)) return;
+  const k = key.toLowerCase();
+  if (k !== 'a' && k !== 'd' && k !== 's') return;
+
+  const now = Date.now();
+  if (now - lastNavKeyTime < 180) return;
+  lastNavKeyTime = now;
+
+  if (k === 'a') {
+    jumpToPreviousSubtitle();
+  } else if (k === 'd') {
+    jumpToNextSubtitle();
+  } else if (k === 's') {
+    repeatCurrentSubtitle();
+  }
 }
 
 function jumpToPreviousSubtitle() {
@@ -1404,6 +1440,10 @@ function jumpToPreviousSubtitle() {
         seekVideoToTime(video, prevCue.start);
         showNavToast(`⏮ ${prevCue.text}`);
         return;
+      } else {
+        seekVideoToTime(video, currentCue.start);
+        showNavToast(`⏮ ${currentCue.text}`);
+        return;
       }
     } else {
       // Find the last cue before current time
@@ -1418,7 +1458,7 @@ function jumpToPreviousSubtitle() {
   }
 
   // Fallback if no cues: jump back 3.5 seconds
-  seekVideoToTime(video, now - 3.5);
+  seekVideoToTime(video, Math.max(0, now - 3.5));
   showNavToast(`⏮ -3.5s`);
 }
 
@@ -1472,25 +1512,18 @@ function repeatCurrentSubtitle() {
   showNavToast(`🔁 -3s`);
 }
 
-// Global Keyboard Listener for A / D / S subtitle navigation
+// Global Keyboard Listener for A / D / S subtitle navigation (fallback / direct)
 window.addEventListener('keydown', (e) => {
-  // Never intercept if user is typing in any text input, textarea, contenteditable, or our modal
-  const activeEl = document.activeElement;
-  if (
-    activeEl && (
-      activeEl.tagName === 'INPUT' ||
-      activeEl.tagName === 'TEXTAREA' ||
-      activeEl.isContentEditable ||
-      activeEl.closest?.('input, textarea, [contenteditable="true"], #ydh-tooltip')
-    )
-  ) {
-    return;
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  if (isInputActive(e.target || document.activeElement)) return;
+
+  let key = (e.key || '').toLowerCase();
+  if (!key) {
+    if (e.code === 'KeyA') key = 'a';
+    else if (e.code === 'KeyD') key = 'd';
+    else if (e.code === 'KeyS') key = 's';
   }
 
-  // Never intercept if modifier keys like Ctrl, Alt, Meta (Command) are held
-  if (e.ctrlKey || e.altKey || e.metaKey) return;
-
-  const key = e.key.toLowerCase();
   if (key === 'a' || key === 'd' || key === 's') {
     const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
     if (!video) return;
@@ -1499,32 +1532,22 @@ window.addEventListener('keydown', (e) => {
     e.stopPropagation();
     e.stopImmediatePropagation?.();
 
-    if (key === 'a') {
-      jumpToPreviousSubtitle();
-    } else if (key === 'd') {
-      jumpToNextSubtitle();
-    } else if (key === 's') {
-      repeatCurrentSubtitle();
-    }
+    handleNavKey(key);
   }
 }, true);
 
-// Also swallow keyup and keypress so Prime Video's native listeners never see 'A'
+// Swallow keyup and keypress so Prime Video's native listeners never see 'A'
 const swallowNavRelease = (e) => {
   if (e.ctrlKey || e.altKey || e.metaKey) return;
-  const activeEl = document.activeElement;
-  if (
-    activeEl && (
-      activeEl.tagName === 'INPUT' ||
-      activeEl.tagName === 'TEXTAREA' ||
-      activeEl.isContentEditable ||
-      activeEl.closest?.('input, textarea, [contenteditable="true"], #ydh-tooltip')
-    )
-  ) {
-    return;
+  if (isInputActive(e.target || document.activeElement)) return;
+
+  let key = (e.key || '').toLowerCase();
+  if (!key) {
+    if (e.code === 'KeyA') key = 'a';
+    else if (e.code === 'KeyD') key = 'd';
+    else if (e.code === 'KeyS') key = 's';
   }
 
-  const key = (e.key || '').toLowerCase();
   if (key === 'a' || key === 'd' || key === 's') {
     const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
     if (video) {
