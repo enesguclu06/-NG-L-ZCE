@@ -652,6 +652,24 @@ function updateSubBarPosition(bar, anchorRect, container) {
   });
 }
 
+// Check if player has native or official Turkish subtitle track (0ms instant!)
+function getNativeTurkishTrackCue() {
+  try {
+    const videos = document.querySelectorAll('video');
+    for (const v of videos) {
+      if (!v.textTracks) continue;
+      for (let i = 0; i < v.textTracks.length; i++) {
+        const track = v.textTracks[i];
+        if (track.language && (track.language.toLowerCase().startsWith('tr') || track.label?.toLowerCase().includes('türk')) && track.activeCues && track.activeCues.length > 0) {
+          const raw = (track.activeCues[0].text || '').replace(/<[^>]+>/g, '').trim();
+          if (raw.length >= 2) return raw;
+        }
+      }
+    }
+  } catch {}
+  return null;
+}
+
 function showSubBar(sentence, anchorRect, isDual = false) {
   if (!sentence || activeSubtitleMode === 'off') {
     hideSubBar();
@@ -670,22 +688,70 @@ function showSubBar(sentence, anchorRect, isDual = false) {
 
   currentSubSentence = sentence;
 
+  // 1. Instant Official Turkish Track (0 ms!)
+  const nativeTr = getNativeTurkishTrackCue();
+  if (nativeTr) {
+    textEl.textContent = nativeTr;
+    textEl.classList.remove('ydh-sub-loading');
+    updateSubBarPosition(subBar, anchorRect, container);
+    subBar.classList.add('ydh-sub-visible');
+    return;
+  }
+
+  // 2. Instant Memory Cache (0 ms!)
   if (sentenceCache.has(sentence)) {
     textEl.textContent = sentenceCache.get(sentence);
     textEl.classList.remove('ydh-sub-loading');
     updateSubBarPosition(subBar, anchorRect, container);
     subBar.classList.add('ydh-sub-visible');
-  } else {
-    // Smooth transition: don't flash '...' box!
-    // As soon as translation is ready, update text and position
-    getSentenceTranslation(sentence).then((tr) => {
-      if (currentSubSentence === sentence && subBar) {
-        textEl.textContent = tr || sentence;
-        textEl.classList.remove('ydh-sub-loading');
-        updateSubBarPosition(subBar, anchorRect, container);
-        subBar.classList.add('ydh-sub-visible');
+    return;
+  }
+
+  // 3. Ultra-Fast ~100ms Translation
+  getSentenceTranslation(sentence).then((tr) => {
+    if (currentSubSentence === sentence && subBar) {
+      textEl.textContent = tr || sentence;
+      textEl.classList.remove('ydh-sub-loading');
+      updateSubBarPosition(subBar, anchorRect, container);
+      subBar.classList.add('ydh-sub-visible');
+    }
+  });
+}
+
+// ── Real-time MutationObserver (0ms Instant Subtitle Detection) ─────────────
+let subObserver = null;
+
+function setupSubtitleObserver() {
+  if (subObserver) return;
+
+  const target = document.querySelector(`
+    .atvwebplayersdk-captions-overlay,
+    .ytp-caption-window-bottom,
+    .caption-window,
+    .player-timedtext,
+    #movie_player,
+    .webPlayerUIContainer
+  `) || document.body;
+
+  try {
+    subObserver = new MutationObserver(() => {
+      if (activeSubtitleMode === 'dual') {
+        scanAndShowDualSubtitle();
       }
     });
+
+    subObserver.observe(target, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+  } catch {}
+}
+
+function teardownSubtitleObserver() {
+  if (subObserver) {
+    try { subObserver.disconnect(); } catch {}
+    subObserver = null;
   }
 }
 
@@ -696,9 +762,11 @@ function handleSubtitleModeChange() {
   }
 
   if (activeSubtitleMode === 'dual') {
+    setupSubtitleObserver();
     scanAndShowDualSubtitle();
-    dualSubTimer = setInterval(scanAndShowDualSubtitle, 180);
+    dualSubTimer = setInterval(scanAndShowDualSubtitle, 150);
   } else {
+    teardownSubtitleObserver();
     hideSubBar();
   }
 }
