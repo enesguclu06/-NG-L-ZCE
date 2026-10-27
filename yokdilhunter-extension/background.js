@@ -223,24 +223,72 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// ── Google Translate Sentence Engine ────────────────────────────────────────
+// ── Fast Multi-Provider Sentence Translation Engine ────────────────────────
 async function fetchSentenceTranslation(sentence) {
   if (!sentence || typeof sentence !== 'string') return '';
   const trimmed = sentence.trim();
   if (!trimmed) return '';
 
+  // 1. Google Translate (Official Chrome Extension Client)
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=dict-chrome-ex&sl=auto&tl=tr&dt=t&q=${encodeURIComponent(trimmed)}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data?.[0])) {
+        const text = data[0].map(s => s?.[0]).filter(Boolean).join('');
+        if (text && text.trim()) return text.trim();
+      }
+    }
+  } catch (err) {
+    console.warn("dict-chrome-ex translation failed, trying fallback:", err);
+  }
+
+  // 2. Google Translate (gtx client fallback)
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=tr&dt=t&q=${encodeURIComponent(trimmed)}`;
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (Array.isArray(data?.[0])) {
-      const result = data[0].map(segment => segment?.[0]).filter(Boolean).join('');
-      return result.trim();
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data?.[0])) {
+        const text = data[0].map(s => s?.[0]).filter(Boolean).join('');
+        if (text && text.trim()) return text.trim();
+      }
     }
   } catch (err) {
-    console.warn("Sentence translation failed:", err);
+    console.warn("gtx translation failed, trying clients5 fallback:", err);
   }
+
+  // 3. clients5 Google API fallback (ultra-fast compact payload)
+  try {
+    const url = `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=tr&q=${encodeURIComponent(trimmed)}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data[0]?.[0]) {
+        const text = String(data[0][0]).trim();
+        if (text) return text;
+      }
+    }
+  } catch (err) {
+    console.warn("clients5 translation failed, trying mymemory fallback:", err);
+  }
+
+  // 4. MyMemory API fallback
+  try {
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(trimmed)}&langpair=en|tr`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.responseData?.translatedText) {
+        const text = data.responseData.translatedText.trim();
+        if (text && !text.includes('QUERY LENGTH LIMIT EXCEEDED')) return text;
+      }
+    }
+  } catch (err) {
+    console.warn("All translation engines failed for sentence:", err);
+  }
+
   return '';
 }
 

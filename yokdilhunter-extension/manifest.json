@@ -33,6 +33,7 @@
     "https://en.wikipedia.org/*",
     "https://generativelanguage.googleapis.com/*",
     "https://translate.googleapis.com/*",
+    "https://clients5.google.com/*",
     "https://tatoeba.org/*"
   ],
   "content_scripts": [
