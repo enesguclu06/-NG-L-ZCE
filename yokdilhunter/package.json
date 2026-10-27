@@ -11,10 +11,12 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
+    "dotenv": "^18.0.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.27.0",
     "recharts": "^3.10.1",
+    "web-push": "^3.6.7",
     "zustand": "^5.0.1"
   },
   "devDependencies": {

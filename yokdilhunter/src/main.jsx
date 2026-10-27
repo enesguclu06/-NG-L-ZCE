@@ -2,11 +2,10 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import './index.css'
+import { registerSW } from 'virtual:pwa-register'
 
-// Register PWA service worker
-if ('serviceWorker' in navigator) {
-  // vite-plugin-pwa handles this automatically in production builds
-}
+// Register PWA service worker for offline support and web push notifications
+registerSW({ immediate: true })
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

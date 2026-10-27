@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'icons/*.png'],
+      includeAssets: ['favicon.ico', 'icons/*.png', 'sw-push.js'],
       manifest: {
         name: 'YOKDILHUNTER',
         short_name: 'YDH',
@@ -38,6 +38,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        importScripts: ['sw-push.js'],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {

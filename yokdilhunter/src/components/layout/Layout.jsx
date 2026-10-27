@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { BottomNav } from './BottomNav'
 import { AiSettingsModal } from './AiSettingsModal'
+import { NotificationModal } from '../notifications/NotificationModal'
 import { getGeminiApiKey } from '../../lib/api'
 import { useStreak } from '../../hooks/useStreak'
 import { StreakModal, StreakCelebrationModal } from '../streak/StreakModal'
@@ -12,6 +13,7 @@ export function Layout({ children }) {
   const navigate = useNavigate()
   const [showAiModal, setShowAiModal] = useState(false)
   const [showStreakModal, setShowStreakModal] = useState(false)
+  const [showNotificationModal, setShowNotificationModal] = useState(false)
   const hasGemini = !!getGeminiApiKey()
   const streak = useStreak()
 
@@ -39,6 +41,15 @@ export function Layout({ children }) {
 
           {/* Right side */}
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Notification Reminder Trigger */}
+            <button
+              onClick={() => setShowNotificationModal(true)}
+              className="flex items-center gap-1 p-2 rounded-lg text-xs font-medium transition-all bg-white/5 text-amber-300 hover:text-amber-200 hover:bg-white/10 border border-white/5"
+              title="Kelime Hatırlatıcı Bildirimler (10:00 & 22:00)"
+            >
+              <span className="text-sm">🔔</span>
+            </button>
+
             {/* Streak Counter Trigger */}
             <button
               onClick={() => setShowStreakModal(true)}
@@ -97,6 +108,12 @@ export function Layout({ children }) {
       <main className="flex-1 pb-nav">
         {children}
       </main>
+
+      {/* ── Notification Reminder Modal ── */}
+      <NotificationModal
+        isOpen={showNotificationModal}
+        onClose={() => setShowNotificationModal(false)}
+      />
 
       {/* ── AI Settings Modal ── */}
       <AiSettingsModal isOpen={showAiModal} onClose={() => setShowAiModal(false)} />

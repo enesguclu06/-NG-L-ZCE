@@ -1,0 +1,35 @@
+name: Daily Word Reminders (10:00 & 22:00 TR)
+
+on:
+  schedule:
+    # 07:00 UTC = 10:00 Turkey Time (UTC+3)
+    # 19:00 UTC = 22:00 Turkey Time (UTC+3)
+    - cron: '0 7,19 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  send-push-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: yokdilhunter
+        run: npm ci || npm install
+
+      - name: Run Push Reminder Dispatcher
+        working-directory: yokdilhunter
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://vovqngmllgbbfziarmqd.supabase.co' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'sb_publishable_FzjhHyDUlzp_sHnlHxYvGg_lVk20xxp' }}
+          VITE_VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY || 'BE7AhbJfl8S5A11XPA3Ck8tYMjsuNrvPSPB7IOceRoHh9S7XuFKGVpF9jmuFc_Mk4Bcfk18eMJ6RL-ZVX3s5Fw8' }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY || 'Xf5NG8UfoANqMBYtk2IUyMkP2nOU_JovYR3TupkVp50' }}
+          VAPID_SUBJECT: 'mailto:admin@yokdilhunter.app'
+        run: node scripts/send-reminders.js
