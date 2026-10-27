@@ -455,14 +455,17 @@ function getSentenceTranslation(sentence) {
           return;
         }
         const translation = (response?.translation || '').trim();
-        if (translation) {
+        // Discard any single-character junk for sentences
+        if (translation && (translation.length >= 2 || trimmed.length <= 2)) {
           if (sentenceCache.size > 500) {
             const firstKey = sentenceCache.keys().next().value;
             sentenceCache.delete(firstKey);
           }
           sentenceCache.set(trimmed, translation);
+          resolve(translation);
+        } else {
+          resolve('');
         }
-        resolve(translation);
       });
     } catch (err) {
       console.warn('getSentenceTranslation exception:', err);

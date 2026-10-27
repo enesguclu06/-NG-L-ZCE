@@ -238,9 +238,16 @@ async function fetchSentenceTranslation(sentence) {
     const res = await fetch(url);
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data) && data[0]?.[0]) {
-        const text = String(data[0][0]).trim();
-        if (text) return text;
+      if (typeof data === 'string' && data.trim()) {
+        return data.trim();
+      }
+      if (Array.isArray(data)) {
+        if (typeof data[0] === 'string' && data[0].trim()) {
+          return data[0].trim();
+        }
+        if (Array.isArray(data[0]) && typeof data[0][0] === 'string' && data[0][0].trim()) {
+          return data[0][0].trim();
+        }
       }
     }
   } catch (err) {
