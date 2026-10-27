@@ -110,6 +110,10 @@ function isPlayerControlOrUI(el) {
 // ── Subtitle Candidate Selectors (Strict Subtitle Text Spans & Containers) ─────
 const SUBTITLE_SELECTORS = [
   // Amazon Prime Video subtitle text containers & spans
+  '.atvwebplayersdk-captions-text span',
+  '.atvwebplayersdk-captions-text',
+  '[class*="captions-text"] span',
+  '[class*="captions-text"]',
   '.timedTextBackground span',
   '.timedTextOutput span',
   '.timedTextBackground',
@@ -131,7 +135,9 @@ const SUBTITLE_SELECTORS = [
 
 // Full subtitle cue containers for dual & hover subtitle sentence detection
 const SUBTITLE_CONTAINER_SELECTORS = [
-  // Amazon Prime Video (Target ONLY the actual cue text boxes, NOT the fullscreen wrapper)
+  // Amazon Prime Video (Target actual cue text boxes)
+  '.atvwebplayersdk-captions-text',
+  '[class*="captions-text"]',
   '.atvwebplayersdk-captions-overlay .timedTextOutput',
   '.atvwebplayersdk-captions-overlay .timedTextBackground',
   '.timedTextOutput',
@@ -148,8 +154,7 @@ const SUBTITLE_CONTAINER_SELECTORS = [
   '.dss-subtitle-renderer-line',
   // Generic HTML5 / Video.js
   '.vjs-text-track-display .vjs-text-track-cue',
-  '.vjs-text-track-cue',
-  '[class*="captions-text"]'
+  '.vjs-text-track-cue'
 ];
 
 // ── Helper: Extract surrounding sentence around range or text ───────────────
@@ -432,9 +437,50 @@ window.addEventListener('blur', () => {
 });
 
 // ── Sentence Translation Cache & Fetcher ────────────────────────────────────
-// ── Sentence Translation Cache & Fetcher ────────────────────────────────────
+// ── Sentence Translation Cache & Fetcher (Ultra-Fast 0ms Pre-warmed) ──────
 const sentenceCache = new Map();
 const pendingTranslations = new Map();
+
+// Load persistent session cache for instant replay (0ms)
+try {
+  const saved = sessionStorage.getItem('ydh_sub_cache');
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    for (const [k, v] of Object.entries(parsed)) {
+      sentenceCache.set(k, v);
+    }
+  }
+} catch {}
+
+function cacheAndPersist(trimmed, translation) {
+  if (sentenceCache.size > 600) {
+    const firstKey = sentenceCache.keys().next().value;
+    sentenceCache.delete(firstKey);
+  }
+  sentenceCache.set(trimmed, translation);
+  try {
+    const obj = Object.fromEntries(Array.from(sentenceCache.entries()).slice(-200));
+    sessionStorage.setItem('ydh_sub_cache', JSON.stringify(obj));
+  } catch {}
+}
+
+async function fastDirectFetch(trimmed) {
+  try {
+    const isEnglish = /^[a-zA-Z0-9\s.,!?'"()\-—:;]+$/.test(trimmed);
+    const srcLang = isEnglish ? 'en' : 'auto';
+    const url = `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${srcLang}&tl=tr&q=${encodeURIComponent(trimmed)}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (typeof data === 'string' && data.trim()) return data.trim();
+      if (Array.isArray(data)) {
+        if (typeof data[0] === 'string' && data[0].trim()) return data[0].trim();
+        if (Array.isArray(data[0]) && typeof data[0][0] === 'string' && data[0][0].trim()) return data[0][0].trim();
+      }
+    }
+  } catch {}
+  return '';
+}
 
 function getSentenceTranslation(sentence) {
   if (!sentence) return Promise.resolve('');
@@ -446,32 +492,37 @@ function getSentenceTranslation(sentence) {
     return pendingTranslations.get(trimmed);
   }
 
-  const p = new Promise((resolve) => {
+  const p = (async () => {
+    // 1. Direct fetch inside content script (~60-90ms)
     try {
-      chrome.runtime.sendMessage({ action: 'translate_sentence', sentence: trimmed }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.warn('translate_sentence runtime error:', chrome.runtime.lastError);
-          resolve('');
-          return;
-        }
-        const translation = (response?.translation || '').trim();
-        // Discard any single-character junk for sentences
-        if (translation && (translation.length >= 2 || trimmed.length <= 2)) {
-          if (sentenceCache.size > 500) {
-            const firstKey = sentenceCache.keys().next().value;
-            sentenceCache.delete(firstKey);
+      const direct = await fastDirectFetch(trimmed);
+      if (direct && (direct.length >= 2 || trimmed.length <= 2)) {
+        cacheAndPersist(trimmed, direct);
+        return direct;
+      }
+    } catch {}
+
+    // 2. Fallback to background service worker via IPC (~120ms)
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ action: 'translate_sentence', sentence: trimmed }, (response) => {
+          if (chrome.runtime.lastError) {
+            resolve('');
+            return;
           }
-          sentenceCache.set(trimmed, translation);
-          resolve(translation);
-        } else {
-          resolve('');
-        }
-      });
-    } catch (err) {
-      console.warn('getSentenceTranslation exception:', err);
-      resolve('');
-    }
-  }).finally(() => {
+          const translation = (response?.translation || '').trim();
+          if (translation && (translation.length >= 2 || trimmed.length <= 2)) {
+            cacheAndPersist(trimmed, translation);
+            resolve(translation);
+          } else {
+            resolve('');
+          }
+        });
+      } catch (err) {
+        resolve('');
+      }
+    });
+  })().finally(() => {
     pendingTranslations.delete(trimmed);
   });
 
@@ -509,7 +560,7 @@ function findActiveSubtitleCue() {
     }
   } catch {}
 
-  // Fallback: check native HTML5 video text tracks
+  // Fallback: check native HTML5 video text tracks or preloaded cues
   if (visibleCandidates.length === 0) {
     try {
       const videos = document.querySelectorAll('video');
@@ -540,6 +591,33 @@ function findActiveSubtitleCue() {
         }
       }
     } catch {}
+
+    // Fallback 2: Check preloaded intercepted cues matching video currentTime
+    if (typeof preloadedSourceCues !== 'undefined' && preloadedSourceCues?.length > 0) {
+      try {
+        const v = document.querySelector('video');
+        if (v && !v.paused) {
+          const now = v.currentTime || 0;
+          const match = preloadedSourceCues.find(c => c.start <= (now + 0.25) && (now - 0.25) <= c.end);
+          if (match && match.text) {
+            const vRect = v.getBoundingClientRect();
+            return {
+              el: v,
+              text: match.text,
+              rect: {
+                top: vRect.bottom - 95,
+                bottom: vRect.bottom - 45,
+                left: vRect.left + vRect.width * 0.15,
+                right: vRect.left + vRect.width * 0.85,
+                width: vRect.width * 0.7,
+                height: 50
+              }
+            };
+          }
+        }
+      } catch {}
+    }
+
     return null;
   }
 
@@ -655,8 +733,117 @@ function updateSubBarPosition(bar, anchorRect, container) {
   });
 }
 
+// ── Lookahead Subtitle Cues & Official Turkish Tracks (0ms Zero-Latency Engine) ──
+let preloadedSourceCues = [];
+let officialTurkishCues = [];
+let lastPreWarmTime = -1;
+
+// Receive intercepted subtitle tracks from interceptor.js (MAIN world)
+window.addEventListener('message', (event) => {
+  if (event.source !== window || !event.data || event.data.from !== 'ydh_interceptor') return;
+  if (event.data.action === 'cues_loaded') {
+    if (event.data.lang === 'tr') {
+      officialTurkishCues = event.data.cues || [];
+    } else {
+      preloadedSourceCues = event.data.cues || [];
+      const v = document.querySelector('video');
+      preWarmUpcomingCues(v?.currentTime || 0);
+    }
+  }
+});
+
+// Pre-warms upcoming cues ~60-90 seconds ahead so translations are already in memory (0ms)
+function preWarmUpcomingCues(currentTime) {
+  const now = currentTime || 0;
+  if (Math.abs(now - lastPreWarmTime) < 3) return;
+  lastPreWarmTime = now;
+
+  if (preloadedSourceCues && preloadedSourceCues.length > 0) {
+    let count = 0;
+    for (let i = 0; i < preloadedSourceCues.length; i++) {
+      const cue = preloadedSourceCues[i];
+      if (cue.start >= now - 5 && cue.start <= now + 75) {
+        if (cue.text && cue.text.length >= 2 && !sentenceCache.has(cue.text)) {
+          count++;
+          getSentenceTranslation(cue.text);
+          if (count >= 20) break;
+        }
+      }
+    }
+  }
+}
+
+// Binds video playback clock and inspects textTracks for native Turkish or source cues
+function syncAndPrewarmVideos() {
+  const videos = document.querySelectorAll('video');
+  for (const v of videos) {
+    if (!v._ydhBound) {
+      v._ydhBound = true;
+      v.addEventListener('timeupdate', () => {
+        if (activeSubtitleMode === 'dual') {
+          scanAndShowDualSubtitle();
+          preWarmUpcomingCues(v.currentTime);
+        }
+      });
+      v.addEventListener('seeked', () => {
+        if (activeSubtitleMode === 'dual') {
+          preWarmUpcomingCues(v.currentTime);
+          scanAndShowDualSubtitle();
+        }
+      });
+    }
+
+    if (v.textTracks) {
+      for (let i = 0; i < v.textTracks.length; i++) {
+        const track = v.textTracks[i];
+        const lang = (track.language || '').toLowerCase();
+        const label = (track.label || '').toLowerCase();
+        const isTurkish = lang.startsWith('tr') || label.includes('türk') || label.includes('turk');
+
+        // Silently activate Turkish track in background so track.activeCues updates at 60fps
+        if (isTurkish && track.mode === 'disabled') {
+          track.mode = 'hidden';
+        }
+
+        // Silently activate source track if disabled to load cues
+        if (!isTurkish && track.mode === 'disabled') {
+          track.mode = 'hidden';
+        }
+
+        // Pre-warm from track.cues if available
+        if (!isTurkish && track.cues && track.cues.length > 0) {
+          const now = v.currentTime || 0;
+          let count = 0;
+          for (let c = 0; c < track.cues.length; c++) {
+            const cue = track.cues[c];
+            if (cue.startTime >= now - 5 && cue.startTime <= now + 75) {
+              const raw = (cue.text || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+              if (raw.length >= 2 && !sentenceCache.has(raw)) {
+                count++;
+                getSentenceTranslation(raw);
+                if (count >= 20) break;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 // Check if player has native or official Turkish subtitle track (0ms instant!)
 function getNativeTurkishTrackCue() {
+  // 1. Check official Turkish cues from intercepted subtitle stream
+  try {
+    const v = document.querySelector('video');
+    const now = v?.currentTime || 0;
+    if (officialTurkishCues && officialTurkishCues.length > 0) {
+      const match = officialTurkishCues.find(c => c.start <= (now + 0.3) && (now - 0.3) <= c.end);
+      if (match && match.text) return match.text;
+    }
+  } catch {}
+
+  // 2. Check native HTML5 text tracks
   try {
     const videos = document.querySelectorAll('video');
     for (const v of videos) {
@@ -710,7 +897,7 @@ function showSubBar(sentence, anchorRect, isDual = false) {
     return;
   }
 
-  // 3. Ultra-Fast ~100ms Translation
+  // 3. Ultra-Fast ~100ms Translation (with instant snap)
   getSentenceTranslation(sentence).then((tr) => {
     if (currentSubSentence === sentence && subBar) {
       textEl.textContent = tr || sentence;
@@ -729,6 +916,7 @@ function setupSubtitleObserver() {
 
   const target = document.querySelector(`
     .atvwebplayersdk-captions-overlay,
+    .atvwebplayersdk-captions-text,
     .ytp-caption-window-bottom,
     .caption-window,
     .player-timedtext,
@@ -766,8 +954,12 @@ function handleSubtitleModeChange() {
 
   if (activeSubtitleMode === 'dual') {
     setupSubtitleObserver();
+    syncAndPrewarmVideos();
     scanAndShowDualSubtitle();
-    dualSubTimer = setInterval(scanAndShowDualSubtitle, 150);
+    dualSubTimer = setInterval(() => {
+      scanAndShowDualSubtitle();
+      syncAndPrewarmVideos();
+    }, 40);
   } else {
     teardownSubtitleObserver();
     hideSubBar();
@@ -1353,6 +1545,9 @@ function injectStyles() {
     .ydh-save-btn:disabled { opacity: 0.5; cursor: default; }
 
     /* Only actual subtitle text spans are interactive with pointer cursor */
+    .atvwebplayersdk-captions-text span,
+    .atvwebplayersdk-captions-text,
+    [class*="captions-text"] span,
     .timedTextBackground span,
     .timedTextOutput span,
     .player-timedtext-text-container span,
@@ -1363,7 +1558,7 @@ function injectStyles() {
       -webkit-user-select: text !important;
     }
 
-    /* Subtitle Sentence Translation Bar (True Cinema Subtitle Style) */
+    /* Subtitle Sentence Translation Bar (True Cinema Subtitle Style - Instant Zero-Lag Snap) */
     #ydh-sub-translation-bar {
       display: inline-flex;
       justify-content: center;
@@ -1375,11 +1570,11 @@ function injectStyles() {
       pointer-events: none;
       user-select: none;
       -webkit-user-select: none;
-      transition: opacity 0.15s ease-out;
+      transition: none !important;
       z-index: 2147483646;
     }
     #ydh-sub-translation-bar.ydh-sub-visible {
-      opacity: 1;
+      opacity: 1 !important;
     }
     .ydh-sub-text {
       display: inline-block;
