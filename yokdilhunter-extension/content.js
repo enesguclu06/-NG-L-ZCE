@@ -1038,6 +1038,8 @@ function scanAndShowDualSubtitle() {
   try {
     const sub = findActiveSubtitleCue();
     if (sub && sub.text) {
+      const v = document.querySelector('video');
+      if (v) recordObservedCue(sub.text, v.currentTime);
       showSubBar(sub.text, sub.rect, true);
     } else {
       hideSubBar();
@@ -1266,6 +1268,229 @@ window.addEventListener('contextmenu', (e) => {
           showToast(response?.error ? `${response.error}` : '❌ Kayıt başarısız oldu');
         }
       });
+    }
+  }
+}, true);
+
+// ── Subtitle-by-Subtitle Navigation Engine (A / D / S keys) ─────────────────
+let observedHistoryCues = [];
+let navToastTimeout = null;
+
+function recordObservedCue(text, time) {
+  if (!text || typeof time !== 'number') return;
+  const existing = observedHistoryCues.find(c => Math.abs(c.start - time) < 1.5);
+  if (!existing) {
+    observedHistoryCues.push({ start: time, end: time + 3.2, text });
+    if (observedHistoryCues.length > 500) observedHistoryCues.shift();
+    observedHistoryCues.sort((a, b) => a.start - b.start);
+  }
+}
+
+function getAllSubtitleCues(video) {
+  // 1. Intercepted cues from VTT/TTML/timedtext streams
+  if (preloadedSourceCues && preloadedSourceCues.length > 0) {
+    return preloadedSourceCues;
+  }
+  // 2. Official Turkish cues if available
+  if (officialTurkishCues && officialTurkishCues.length > 0) {
+    return officialTurkishCues;
+  }
+  // 3. HTML5 textTracks on the video
+  if (video && video.textTracks) {
+    for (let i = 0; i < video.textTracks.length; i++) {
+      const track = video.textTracks[i];
+      if (track.cues && track.cues.length > 0) {
+        const res = [];
+        for (let c = 0; c < track.cues.length; c++) {
+          const cue = track.cues[c];
+          res.push({
+            start: cue.startTime,
+            end: cue.endTime,
+            text: (cue.text || '').replace(/<[^>]+>/g, '').trim()
+          });
+        }
+        if (res.length > 0) {
+          res.sort((a, b) => a.start - b.start);
+          return res;
+        }
+      }
+    }
+  }
+  // 4. Observed DOM history cues
+  if (observedHistoryCues && observedHistoryCues.length > 0) {
+    return observedHistoryCues;
+  }
+  return [];
+}
+
+function seekVideoToTime(video, targetSeconds) {
+  if (!video) return;
+  const clamped = Math.max(0, Math.min(video.duration || 999999, targetSeconds));
+
+  // 1. YouTube specific seek API
+  try {
+    const mp = document.getElementById('movie_player');
+    if (mp && typeof mp.seekTo === 'function') {
+      mp.seekTo(clamped, true);
+    }
+  } catch {}
+
+  // 2. Standard HTML5 seek
+  try {
+    video.currentTime = clamped;
+  } catch {}
+}
+
+function showNavToast(message) {
+  if (!message) return;
+  const container = getAppRoot();
+  let toast = document.getElementById('ydh-sub-nav-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'ydh-sub-nav-toast';
+    container.appendChild(toast);
+  } else if (toast.parentElement !== container) {
+    container.appendChild(toast);
+  }
+
+  toast.textContent = message;
+  toast.classList.add('ydh-nav-visible');
+
+  if (navToastTimeout) clearTimeout(navToastTimeout);
+  navToastTimeout = setTimeout(() => {
+    toast?.classList.remove('ydh-nav-visible');
+    navToastTimeout = null;
+  }, 1200);
+}
+
+function jumpToPreviousSubtitle() {
+  const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
+  if (!video) return;
+
+  const now = video.currentTime;
+  const cues = getAllSubtitleCues(video);
+
+  if (cues && cues.length > 0) {
+    const currentCueIndex = cues.findIndex(c => c.start <= (now + 0.35) && now <= (c.end + 0.35));
+
+    if (currentCueIndex !== -1) {
+      const currentCue = cues[currentCueIndex];
+      // If we are more than 0.75 seconds into the current cue, replay from its beginning!
+      if (now - currentCue.start > 0.75) {
+        seekVideoToTime(video, currentCue.start);
+        showNavToast(`⏮ ${currentCue.text}`);
+        return;
+      }
+      // Otherwise jump to the previous cue
+      if (currentCueIndex > 0) {
+        const prevCue = cues[currentCueIndex - 1];
+        seekVideoToTime(video, prevCue.start);
+        showNavToast(`⏮ ${prevCue.text}`);
+        return;
+      }
+    } else {
+      // Find the last cue before current time
+      const prevCues = cues.filter(c => c.start < now - 0.2);
+      if (prevCues.length > 0) {
+        const target = prevCues[prevCues.length - 1];
+        seekVideoToTime(video, target.start);
+        showNavToast(`⏮ ${target.text}`);
+        return;
+      }
+    }
+  }
+
+  // Fallback if no cues: jump back 3.5 seconds
+  seekVideoToTime(video, now - 3.5);
+  showNavToast(`⏮ -3.5s`);
+}
+
+function jumpToNextSubtitle() {
+  const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
+  if (!video) return;
+
+  const now = video.currentTime;
+  const cues = getAllSubtitleCues(video);
+
+  if (cues && cues.length > 0) {
+    const nextCue = cues.find(c => c.start > (now + 0.25));
+    if (nextCue) {
+      seekVideoToTime(video, nextCue.start);
+      showNavToast(`⏭ ${nextCue.text}`);
+      return;
+    }
+  }
+
+  // Fallback if no cues: jump forward 3.5 seconds
+  seekVideoToTime(video, now + 3.5);
+  showNavToast(`⏭ +3.5s`);
+}
+
+function repeatCurrentSubtitle() {
+  const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
+  if (!video) return;
+
+  const now = video.currentTime;
+  const cues = getAllSubtitleCues(video);
+
+  if (cues && cues.length > 0) {
+    const currentCue = cues.find(c => c.start <= (now + 0.35) && now <= (c.end + 0.35));
+    if (currentCue) {
+      seekVideoToTime(video, currentCue.start);
+      showNavToast(`🔁 ${currentCue.text}`);
+      return;
+    }
+    const prevCues = cues.filter(c => c.start <= now);
+    if (prevCues.length > 0) {
+      const target = prevCues[prevCues.length - 1];
+      seekVideoToTime(video, target.start);
+      showNavToast(`🔁 ${target.text}`);
+      return;
+    }
+  }
+
+  seekVideoToTime(video, Math.max(0, now - 3));
+  showNavToast(`🔁 -3s`);
+}
+
+// Global Keyboard Listener for A / D / S subtitle navigation
+window.addEventListener('keydown', (e) => {
+  // Never intercept if user is typing in any text input, textarea, contenteditable, or our modal
+  const activeEl = document.activeElement;
+  if (
+    activeEl && (
+      activeEl.tagName === 'INPUT' ||
+      activeEl.tagName === 'TEXTAREA' ||
+      activeEl.isContentEditable ||
+      activeEl.closest?.('input, textarea, [contenteditable="true"], #ydh-tooltip')
+    )
+  ) {
+    return;
+  }
+
+  // Never intercept if modifier keys like Ctrl, Alt, Meta (Command) are held
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+  const key = e.key.toLowerCase();
+  if (key === 'a' || key === 'd' || key === 's') {
+    const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
+    if (!video) return;
+
+    if (key === 'a') {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation?.();
+      jumpToPreviousSubtitle();
+    } else if (key === 'd') {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation?.();
+      jumpToNextSubtitle();
+    } else if (key === 's') {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation?.();
+      repeatCurrentSubtitle();
     }
   }
 }, true);
@@ -1696,6 +1921,38 @@ function injectStyles() {
       font-style: italic;
       font-size: clamp(16px, 1.8vw, 22px);
       padding: 3px 14px;
+    }
+
+    /* Subtitle Navigation HUD Toast (A / D / S keys) */
+    #ydh-sub-nav-toast {
+      position: fixed;
+      top: 48px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-10px);
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(99, 102, 241, 0.5);
+      color: #f8fafc;
+      padding: 8px 24px;
+      border-radius: 9999px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6), 0 0 15px rgba(99, 102, 241, 0.3);
+      z-index: 2147483647;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+      max-width: 80vw;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: center;
+    }
+    #ydh-sub-nav-toast.ydh-nav-visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
     }
   `;
 
