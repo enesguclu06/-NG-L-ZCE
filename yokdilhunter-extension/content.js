@@ -41,7 +41,7 @@ function getAppRoot() {
 function isPlayerControlOrUI(el) {
   if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
 
-  // Never match our own tooltip, toast, or subtitle bar
+  // 1. Never match our own tooltip, toast, or subtitle bar
   if (el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip') ||
       el.id === 'ydh-notification-toast' ||
       el.id === 'ydh-sub-translation-bar' ||
@@ -49,17 +49,22 @@ function isPlayerControlOrUI(el) {
     return false;
   }
 
-  // Never match actual subtitles!
+  // 2. Never match actual subtitles or caption elements!
   if (el.closest?.(`
     .atvwebplayersdk-captions-overlay,
+    .atvwebplayersdk-captions-text,
     .timedTextOutput,
     .timedTextBackground,
     [class*="timedText"],
     [class*="captions-overlay"],
+    [class*="captions-text"],
+    [class*="caption-window"],
+    [class*="caption-visual-line"],
     .player-timedtext,
     .player-timedtext-text-container,
     .ytp-caption-window-bottom,
     .caption-window,
+    .caption-visual-line,
     .ytp-caption-segment,
     .dss-subtitle-renderer-line,
     .vjs-text-track-cue,
@@ -68,34 +73,49 @@ function isPlayerControlOrUI(el) {
     return false;
   }
 
-  // Interactive HTML elements & ARIA widgets
+  // 3. Never match video elements or player wrapper roots
+  if (
+    el.tagName === 'VIDEO' ||
+    el.id === 'movie_player' ||
+    el.classList?.contains('html5-video-player') ||
+    el.classList?.contains('html5-video-container') ||
+    el.classList?.contains('html5-main-video') ||
+    el.classList?.contains('video-stream') ||
+    el.classList?.contains('atvwebplayersdk-player-container') ||
+    el.classList?.contains('webPlayerUIContainer') ||
+    el.classList?.contains('ytd-player')
+  ) {
+    return false;
+  }
+
+  // 4. Interactive HTML elements & ARIA widgets (Buttons, links, inputs, sliders, menus)
   if (el.closest?.('button, a, input, select, textarea, [role="button"], [role="menu"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [role="tablist"], [role="dialog"], [role="slider"], [role="toolbar"], [role="listbox"]')) {
     return true;
   }
 
-  // Specific player controls, settings dropdowns, audio/subtitle pickers
+  // 5. Specific player controls bar, settings menus, volume sliders
+  // (NOTE: Specific selectors used to avoid false positives on #movie_player)
   if (el.closest?.(`
-    [class*="control"],
-    [class*="settings"],
-    [class*="setting"],
-    [class*="menu"],
-    [class*="panel"],
-    [class*="picker"],
-    [class*="dropdown"],
-    [class*="popup"],
-    [class*="flyout"],
-    [class*="tray"],
-    [class*="scrubber"],
-    [class*="progressbar"],
-    [class*="bottompanel"],
     .ytp-chrome-bottom,
     .ytp-chrome-top,
+    .ytp-chrome-controls,
+    .ytp-left-controls,
+    .ytp-right-controls,
+    .ytp-play-button,
+    .ytp-volume-panel,
+    .ytp-settings-button,
     .ytp-settings-menu,
     .ytp-panel,
     .ytp-popup,
     .ytp-menuitem,
+    .ytp-progress-bar-container,
+    .ytp-progress-bar,
     .atvwebplayersdk-controls-wrapper,
     .atvwebplayersdk-bottompanel-container,
+    .atvwebplayersdk-playpause-button,
+    .atvwebplayersdk-fastseek-button,
+    [class*="controls-wrapper"],
+    [class*="bottompanel-container"],
     [data-uia*="control"],
     [data-uia*="menu"],
     [data-uia*="audio-subtitle"],
@@ -109,6 +129,13 @@ function isPlayerControlOrUI(el) {
 
 // ── Subtitle Candidate Selectors (Strict Subtitle Text Spans & Containers) ─────
 const SUBTITLE_SELECTORS = [
+  // YouTube subtitle text segments & spans
+  '.ytp-caption-segment',
+  '.captions-text span',
+  '.captions-text',
+  '.caption-visual-line span',
+  '.caption-visual-line',
+  '.caption-window span',
   // Amazon Prime Video subtitle text containers & spans
   '.atvwebplayersdk-captions-text span',
   '.atvwebplayersdk-captions-text',
@@ -124,8 +151,6 @@ const SUBTITLE_SELECTORS = [
   '.player-timedtext-text-container span',
   '.player-timedtext-text-container',
   '.player-timedtext',
-  // YouTube subtitle text segments
-  '.ytp-caption-segment',
   // Disney+, Hulu, HBO Max
   '.dss-subtitle-renderer-line',
   // Video.js text track cues & generic
@@ -135,6 +160,11 @@ const SUBTITLE_SELECTORS = [
 
 // Full subtitle cue containers for dual & hover subtitle sentence detection
 const SUBTITLE_CONTAINER_SELECTORS = [
+  // YouTube
+  '.caption-window',
+  '.ytp-caption-window-bottom',
+  '.ytp-caption-segment',
+  '.captions-text',
   // Amazon Prime Video (Target actual cue text boxes)
   '.atvwebplayersdk-captions-text',
   '[class*="captions-text"]',
@@ -144,10 +174,6 @@ const SUBTITLE_CONTAINER_SELECTORS = [
   '.timedTextBackground',
   '[class*="timedTextOutput"]',
   '[class*="timedTextBackground"]',
-  // YouTube
-  '.ytp-caption-window-bottom',
-  '.caption-window',
-  '.ytp-caption-segment',
   // Netflix
   '.player-timedtext-text-container',
   // Disney+, Hulu, HBO Max
@@ -234,6 +260,9 @@ function findWordInElementAt(el, x, y) {
   const wordRegex = /[a-zA-Z0-9'-]+/g;
   const range = document.createRange();
 
+  let closestMatch = null;
+  let minDistance = Infinity;
+
   for (const textNode of textNodes) {
     const text = textNode.nodeValue;
     wordRegex.lastIndex = 0;
@@ -250,10 +279,10 @@ function findWordInElementAt(el, x, y) {
         range.setEnd(textNode, m.index + m[0].length);
         const rect = range.getBoundingClientRect();
 
-        // 6px hit padding for easy and forgiving clicking on moving subtitles
-        if (x >= rect.left - 6 && x <= rect.right + 6 && y >= rect.top - 6 && y <= rect.bottom + 6) {
+        // Direct hit with generous 12px hit padding
+        if (x >= rect.left - 12 && x <= rect.right + 12 && y >= rect.top - 12 && y <= rect.bottom + 12) {
           const container = el.closest?.(
-            '.timedTextOutput, .timedTextBackground, [class*="timedText"], .atvwebplayersdk-captions-overlay, .player-timedtext, .ytp-caption-window-bottom, [class*="caption"], [class*="subtitle"]'
+            '.timedTextOutput, .timedTextBackground, [class*="timedText"], .atvwebplayersdk-captions-overlay, .player-timedtext, .ytp-caption-window-bottom, .caption-window, [class*="caption"], [class*="subtitle"]'
           ) || el;
           const fullText = (container.innerText || container.textContent || '').replace(/\s+/g, ' ').trim();
           const sentence = extractSentenceAroundRange(range, cleanWord) ||
@@ -271,14 +300,47 @@ function findWordInElementAt(el, x, y) {
             }
           };
         }
+
+        // Distance check for closest word fallback (e.g. clicked on space or nearby)
+        const dx = Math.max(0, rect.left - x, x - rect.right);
+        const dy = Math.max(0, rect.top - y, y - rect.bottom);
+        const dist = Math.hypot(dx, dy);
+        if (dist < minDistance && dist <= 32) {
+          minDistance = dist;
+          const container = el.closest?.(
+            '.timedTextOutput, .timedTextBackground, [class*="timedText"], .atvwebplayersdk-captions-overlay, .player-timedtext, .ytp-caption-window-bottom, .caption-window, [class*="caption"], [class*="subtitle"]'
+          ) || el;
+          const fullText = (container.innerText || container.textContent || '').replace(/\s+/g, ' ').trim();
+          const sentence = extractSentenceAroundRange(range, cleanWord) ||
+                           extractSentenceFromText(fullText, cleanWord) ||
+                           (fullText.length >= 5 && fullText.length <= 350 ? fullText : null);
+          closestMatch = {
+            word: cleanWord,
+            sentence,
+            rect: {
+              top: rect.top,
+              left: rect.left,
+              width: rect.width,
+              height: rect.height
+            }
+          };
+        }
       } catch (err) {}
     }
   }
-  return null;
+
+  return closestMatch;
 }
 
 // ── Video Helper: Find Active / Overlapping Video ───────────────────────────
 function findAssociatedVideo(x, y) {
+  // 1. YouTube specific: query player video directly
+  const ytPlayer = document.getElementById('movie_player');
+  if (ytPlayer) {
+    const ytVid = ytPlayer.querySelector('video');
+    if (ytVid) return ytVid;
+  }
+  // 2. Point overlap
   const videos = document.querySelectorAll('video');
   for (const v of videos) {
     const r = v.getBoundingClientRect();
@@ -306,13 +368,9 @@ function isElementOverVideo(el, video) {
 
 // ── Subtitle-Specific Word Extractor ────────────────────────────────────────
 function extractSubtitleWordAtPoint(x, y) {
-  // If pointer is over ANY player control or settings menu, ABORT immediately!
-  if (document.elementsFromPoint) {
-    const topElements = document.elementsFromPoint(x, y);
-    for (const el of topElements) {
-      if (isPlayerControlOrUI(el)) return null;
-    }
-  }
+  // If pointer is directly over a button, menu, slider, or player control bar, ignore
+  const topEl = document.elementFromPoint ? document.elementFromPoint(x, y) : null;
+  if (topEl && isPlayerControlOrUI(topEl)) return null;
 
   const video = findAssociatedVideo(x, y);
 
@@ -331,7 +389,7 @@ function extractSubtitleWordAtPoint(x, y) {
       for (const el of candidates) {
         if (!el || isPlayerControlOrUI(el)) continue;
         const rect = el.getBoundingClientRect();
-        if (x >= rect.left - 8 && x <= rect.right + 8 && y >= rect.top - 8 && y <= rect.bottom + 8) {
+        if (x >= rect.left - 15 && x <= rect.right + 15 && y >= rect.top - 15 && y <= rect.bottom + 15) {
           const match = findWordInElementAt(el, x, y);
           if (match) return { ...match, isSubtitle: true, video };
         }
@@ -360,13 +418,9 @@ function extractSubtitleWordAtPoint(x, y) {
 
 // ── General Word Extractor At Point (x, y) ──────────────────────────────────
 function extractWordAtPoint(x, y) {
-  // If player control or settings menu, ignore
-  if (document.elementsFromPoint) {
-    const topElements = document.elementsFromPoint(x, y);
-    for (const el of topElements) {
-      if (isPlayerControlOrUI(el)) return null;
-    }
-  }
+  // If pointer is directly over a control/button/slider, ignore
+  const topEl = document.elementFromPoint ? document.elementFromPoint(x, y) : null;
+  if (topEl && isPlayerControlOrUI(topEl)) return null;
 
   // Try subtitle extraction first
   const subMatch = extractSubtitleWordAtPoint(x, y);
@@ -1087,21 +1141,52 @@ function triggerWordCard(clientX, clientY) {
     video.addEventListener('play', keepPaused);
   }
 
+  // YouTube specific pause via movie_player API
+  try {
+    const mp = document.getElementById('movie_player');
+    if (mp && typeof mp.pauseVideo === 'function') {
+      mp.pauseVideo();
+    }
+  } catch {}
+
   const rect = data.rect || { top: clientY - 15, left: clientX - 20, width: 40, height: 30 };
   showTooltip(data.word, rect, data.sentence);
   return true;
 }
 
 // ── Scroll Wheel / Middle Click (Button 1): Pause & Open Save Card ──────────
-// Prevent all mouse and pointer events for button 1 from reaching video player
+// Prevent all mouse and pointer events for button 1 from reaching video player or activating autoscroll
 function blockMiddleEvent(e) {
   if (e.button !== 1) return;
   if (isPlayerControlOrUI(e.target)) return;
-  const data = extractWordAtPoint(e.clientX, e.clientY);
-  if (data?.word) {
+
+  // Over video, player or subtitle: always prevent browser autoscroll
+  const isVideoOrSub = e.target.closest?.(`
+    video,
+    #movie_player,
+    .html5-video-player,
+    .html5-video-container,
+    .caption-window,
+    .ytp-caption-segment,
+    .captions-text,
+    .atvwebplayersdk-captions-overlay,
+    .atvwebplayersdk-captions-text,
+    .timedTextOutput,
+    .player-timedtext,
+    #ydh-sub-translation-bar
+  `);
+
+  if (isVideoOrSub) {
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation?.();
+  } else {
+    const data = extractWordAtPoint(e.clientX, e.clientY);
+    if (data?.word) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation?.();
+    }
   }
 }
 
@@ -1118,7 +1203,7 @@ function handleMiddleClick(e) {
   if (isPlayerControlOrUI(e.target)) return;
 
   const now = Date.now();
-  if (now - lastMiddleClickTime < 350) return;
+  if (now - lastMiddleClickTime < 300) return;
 
   const handled = triggerWordCard(e.clientX, e.clientY);
   if (handled) {
@@ -1548,9 +1633,13 @@ function injectStyles() {
     .atvwebplayersdk-captions-text span,
     .atvwebplayersdk-captions-text,
     [class*="captions-text"] span,
+    [class*="captions-text"],
     .timedTextBackground span,
     .timedTextOutput span,
     .player-timedtext-text-container span,
+    .caption-visual-line span,
+    .caption-visual-line,
+    .caption-window span,
     .ytp-caption-segment,
     .dss-subtitle-renderer-line {
       cursor: pointer !important;
