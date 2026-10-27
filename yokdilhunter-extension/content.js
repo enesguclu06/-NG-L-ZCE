@@ -1363,7 +1363,24 @@ function showNavToast(message) {
   }, 1200);
 }
 
+function closePrimeVideoAudioPanel() {
+  try {
+    const openPanel = document.querySelector(`
+      .atvwebplayersdk-bottompanel-container,
+      [class*="bottompanel-container"],
+      .atvwebplayersdk-subtitles-overlay,
+      [class*="subtitles-overlay"]
+    `);
+    if (openPanel) {
+      const closeBtn = openPanel.querySelector('button[aria-label*="close" i], button[aria-label*="kapat" i], .close-button');
+      if (closeBtn) closeBtn.click();
+      else openPanel.style.display = 'none';
+    }
+  } catch {}
+}
+
 function jumpToPreviousSubtitle() {
+  closePrimeVideoAudioPanel();
   const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
   if (!video) return;
 
@@ -1406,6 +1423,7 @@ function jumpToPreviousSubtitle() {
 }
 
 function jumpToNextSubtitle() {
+  closePrimeVideoAudioPanel();
   const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
   if (!video) return;
 
@@ -1427,6 +1445,7 @@ function jumpToNextSubtitle() {
 }
 
 function repeatCurrentSubtitle() {
+  closePrimeVideoAudioPanel();
   const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
   if (!video) return;
 
@@ -1476,24 +1495,49 @@ window.addEventListener('keydown', (e) => {
     const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
     if (!video) return;
 
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation?.();
+
     if (key === 'a') {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation?.();
       jumpToPreviousSubtitle();
     } else if (key === 'd') {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation?.();
       jumpToNextSubtitle();
     } else if (key === 's') {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation?.();
       repeatCurrentSubtitle();
     }
   }
 }, true);
+
+// Also swallow keyup and keypress so Prime Video's native listeners never see 'A'
+const swallowNavRelease = (e) => {
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  const activeEl = document.activeElement;
+  if (
+    activeEl && (
+      activeEl.tagName === 'INPUT' ||
+      activeEl.tagName === 'TEXTAREA' ||
+      activeEl.isContentEditable ||
+      activeEl.closest?.('input, textarea, [contenteditable="true"], #ydh-tooltip')
+    )
+  ) {
+    return;
+  }
+
+  const key = (e.key || '').toLowerCase();
+  if (key === 'a' || key === 'd' || key === 's') {
+    const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
+    if (video) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation?.();
+      closePrimeVideoAudioPanel();
+    }
+  }
+};
+
+window.addEventListener('keyup', swallowNavRelease, true);
+window.addEventListener('keypress', swallowNavRelease, true);
 
 // ── Listen for text selection (Mouseup) ─────────────────────────────────────
 document.addEventListener('mouseup', (e) => {

@@ -233,4 +233,38 @@
       return origSend.apply(this, arguments);
     };
   }
+
+  // 3. Block Prime Video's default 'A' (Audio & Subtitles tray) shortcut in MAIN world
+  function isInputActive(target) {
+    if (!target) return false;
+    const tag = (target.tagName || '').toUpperCase();
+    return (
+      tag === 'INPUT' ||
+      tag === 'TEXTAREA' ||
+      target.isContentEditable ||
+      target.closest?.('input, textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"]')
+    );
+  }
+
+  function handleNavKeyInMainWorld(e) {
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    if (isInputActive(e.target || document.activeElement)) return;
+
+    const key = (e.key || '').toLowerCase();
+    if (key === 'a' || key === 'd' || key === 's') {
+      const hasVideo = document.querySelector('video');
+      if (hasVideo) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      }
+    }
+  }
+
+  window.addEventListener('keydown', handleNavKeyInMainWorld, true);
+  window.addEventListener('keypress', handleNavKeyInMainWorld, true);
+  window.addEventListener('keyup', handleNavKeyInMainWorld, true);
+  document.addEventListener('keydown', handleNavKeyInMainWorld, true);
+  document.addEventListener('keypress', handleNavKeyInMainWorld, true);
+  document.addEventListener('keyup', handleNavKeyInMainWorld, true);
 })();
