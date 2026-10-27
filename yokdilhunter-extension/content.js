@@ -876,10 +876,20 @@ function triggerWordCard(clientX, clientY) {
 
   window.getSelection()?.removeAllRanges();
 
-  // Durdursun: pause video if playing
+  // Durdursun: pause video if playing, keep paused if already paused
   const video = data.video || findAssociatedVideo(clientX, clientY);
-  if (video && !video.paused) {
+  if (video) {
     try { video.pause(); } catch {}
+
+    // Lock video in paused state while card is open so it NEVER resumes accidentally
+    const keepPaused = () => {
+      if (tooltip && tooltip.classList.contains('ydh-visible')) {
+        try { video.pause(); } catch {}
+      } else {
+        video.removeEventListener('play', keepPaused);
+      }
+    };
+    video.addEventListener('play', keepPaused);
   }
 
   const rect = data.rect || { top: clientY - 15, left: clientX - 20, width: 40, height: 30 };
@@ -888,19 +898,24 @@ function triggerWordCard(clientX, clientY) {
 }
 
 // ── Scroll Wheel / Middle Click (Button 1): Pause & Open Save Card ──────────
-// 1. Prevent browser autoscroll mode on mousedown
-window.addEventListener('mousedown', (e) => {
-  if (e.button === 1) { // Middle click / Scroll wheel click
-    if (isPlayerControlOrUI(e.target)) return;
-    const data = extractWordAtPoint(e.clientX, e.clientY);
-    if (data?.word) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
+// Prevent all mouse and pointer events for button 1 from reaching video player
+function blockMiddleEvent(e) {
+  if (e.button !== 1) return;
+  if (isPlayerControlOrUI(e.target)) return;
+  const data = extractWordAtPoint(e.clientX, e.clientY);
+  if (data?.word) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation?.();
   }
-}, true);
+}
 
-// 2. Open card on auxclick / mouseup with debounce
+window.addEventListener('pointerdown', blockMiddleEvent, true);
+window.addEventListener('mousedown', blockMiddleEvent, true);
+window.addEventListener('pointerup', blockMiddleEvent, true);
+window.addEventListener('mouseup', blockMiddleEvent, true);
+
+// Open card on middle click with debounce
 let lastMiddleClickTime = 0;
 function handleMiddleClick(e) {
   if (e.button !== 1) return;
