@@ -26,7 +26,12 @@ const isServiceRole = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY || process.e
 
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+})
 
 async function sendReminders() {
   console.log('--- YOKDILHUNTER Hatırlatıcı Gönderimi Başlatılıyor ---')
