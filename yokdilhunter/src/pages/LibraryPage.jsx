@@ -19,6 +19,13 @@ export default function LibraryPage() {
   const [search, setSearch] = useState('')
   const [diffFilter, setDiffFilter] = useState('all')
   const [catFilter, setCatFilter] = useState('all') // Actually deck_id filter
+  const [sortBy, setSortBy] = useState(() => {
+    try {
+      return localStorage.getItem('ydh_library_sort') || 'newest'
+    } catch {
+      return 'newest'
+    }
+  })
   const { toast, showToast, clearToast } = useToast()
 
   const loading = wordsLoading || decksLoading
@@ -28,9 +35,16 @@ export default function LibraryPage() {
     fetchDecks()
   }, [fetchWords, fetchDecks])
 
-  // ── Client-side filtering ──────────────────────────────────────
+  const handleSortChange = (newSort) => {
+    setSortBy(newSort)
+    try {
+      localStorage.setItem('ydh_library_sort', newSort)
+    } catch {}
+  }
+
+  // ── Client-side filtering & sorting ────────────────────────────
   const filtered = useMemo(() => {
-    let list = words
+    let list = [...words]
     if (diffFilter !== 'all') {
       list = list.filter(w => w.difficulty === diffFilter)
     }
@@ -49,8 +63,38 @@ export default function LibraryPage() {
         (w.synonyms ?? []).some(s => s.toLowerCase().includes(q))
       )
     }
+
+    const diffWeight = { hard: 4, medium: 3, easy: 2, mastered: 1, unrated: 0 }
+
+    list.sort((a, b) => {
+      switch (sortBy) {
+        case 'newest':
+          return new Date(b.created_at || 0) - new Date(a.created_at || 0)
+        case 'oldest':
+          return new Date(a.created_at || 0) - new Date(b.created_at || 0)
+        case 'most_reviewed':
+          return ((b.review_count ?? 0) - (a.review_count ?? 0)) ||
+                 (new Date(b.created_at || 0) - new Date(a.created_at || 0))
+        case 'least_reviewed':
+          return ((a.review_count ?? 0) - (b.review_count ?? 0)) ||
+                 (new Date(b.created_at || 0) - new Date(a.created_at || 0))
+        case 'alpha_asc':
+          return (a.english_word || '').localeCompare(b.english_word || '', 'en', { sensitivity: 'base' })
+        case 'alpha_desc':
+          return (b.english_word || '').localeCompare(a.english_word || '', 'en', { sensitivity: 'base' })
+        case 'difficulty_desc':
+          return ((diffWeight[b.difficulty] ?? 0) - (diffWeight[a.difficulty] ?? 0)) ||
+                 (new Date(b.created_at || 0) - new Date(a.created_at || 0))
+        case 'difficulty_asc':
+          return ((diffWeight[a.difficulty] ?? 0) - (diffWeight[b.difficulty] ?? 0)) ||
+                 (new Date(b.created_at || 0) - new Date(a.created_at || 0))
+        default:
+          return new Date(b.created_at || 0) - new Date(a.created_at || 0)
+      }
+    })
+
     return list
-  }, [words, search, diffFilter, catFilter])
+  }, [words, search, diffFilter, catFilter, sortBy])
 
   // We don't need uniqueCategories anymore, we have decks array.
 
@@ -165,19 +209,54 @@ export default function LibraryPage() {
         )}
       </div>
 
-      {/* ── Category Filter ── */}
-      <div className="mb-4 animate-fade-up">
-        <select
-          value={catFilter}
-          onChange={e => setCatFilter(e.target.value)}
-          className="input-base cursor-pointer appearance-none text-sm py-2"
-        >
-          <option value="all">Tüm Listeler</option>
-          <option value="none">Genel (Kategorisiz)</option>
-          {decks.map(deck => (
-            <option key={deck.id} value={deck.id}>{deck.name}</option>
-          ))}
-        </select>
+      {/* ── Controls: Deck Filter & Sort By ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-4 animate-fade-up">
+        {/* Category / Deck Filter */}
+        <div className="relative">
+          <div className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+            📁
+          </div>
+          <select
+            id="select-library-deck"
+            value={catFilter}
+            onChange={e => setCatFilter(e.target.value)}
+            className="input-base cursor-pointer appearance-none text-xs sm:text-sm py-2.5 pl-10 pr-8"
+          >
+            <option value="all">Tüm Listeler ({words.length})</option>
+            <option value="none">Genel (Kategorisiz)</option>
+            {decks.map(deck => (
+              <option key={deck.id} value={deck.id}>{deck.name}</option>
+            ))}
+          </select>
+          <div className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs">
+            ▼
+          </div>
+        </div>
+
+        {/* Sort By Dropdown */}
+        <div className="relative">
+          <div className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+            ↕️
+          </div>
+          <select
+            id="select-library-sort"
+            value={sortBy}
+            onChange={e => handleSortChange(e.target.value)}
+            className="input-base cursor-pointer appearance-none text-xs sm:text-sm py-2.5 pl-10 pr-8 font-medium text-slate-200"
+          >
+            <option value="newest">✨ En Yeni Eklenen</option>
+            <option value="oldest">⏳ En Eski Eklenen</option>
+            <option value="most_reviewed">🔥 En Çok Tekrar Edilen</option>
+            <option value="least_reviewed">🌱 En Az Tekrar Edilen</option>
+            <option value="alpha_asc">🔤 Alfabetik (A → Z)</option>
+            <option value="alpha_desc">🔤 Alfabetik (Z → A)</option>
+            <option value="difficulty_desc">⚡ Zorluk (Zor → Kolay)</option>
+            <option value="difficulty_asc">🎯 Zorluk (Kolay → Zor)</option>
+          </select>
+          <div className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs">
+            ▼
+          </div>
+        </div>
       </div>
 
       {/* ── Difficulty Filter Tabs ── */}
