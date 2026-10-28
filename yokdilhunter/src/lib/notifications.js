@@ -57,6 +57,16 @@ export async function checkIsSubscribed(userId) {
       .eq('endpoint', subscription.endpoint)
       .maybeSingle()
 
+    // If subscription exists in browser but not in Supabase, auto-sync it now!
+    if (!data && userId) {
+      try {
+        await subscribeToPush(userId)
+        return true
+      } catch (syncErr) {
+        console.warn('Auto-sync subscription to Supabase failed:', syncErr)
+      }
+    }
+
     if (error) {
       console.warn('Subscription check error:', error)
       return true

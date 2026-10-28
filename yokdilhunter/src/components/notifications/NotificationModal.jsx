@@ -57,6 +57,9 @@ export function NotificationModal({ isOpen, onClose }) {
   async function handleTestNotification() {
     setErrorMsg(null)
     try {
+      if (user?.id) {
+        await subscribeToPush(user.id)
+      }
       await sendLocalTestNotification()
       setTestSent(true)
       setTimeout(() => setTestSent(false), 4000)
