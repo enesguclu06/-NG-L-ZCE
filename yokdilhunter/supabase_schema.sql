@@ -97,3 +97,30 @@ create policy "Users can delete their own push subscriptions"
   on public.push_subscriptions for delete
   using (auth.uid() = user_id);
 
+-- Table Permissions (Required for PostgREST & Service Role)
+grant all on table public.push_subscriptions to postgres, service_role, authenticated, anon;
+
+-- Security Definer RPC Functions for Cron Reminders
+create or replace function get_all_push_subscriptions()
+returns setof public.push_subscriptions
+language sql
+security definer
+set search_path = public
+as $$
+  select * from public.push_subscriptions;
+$$;
+
+grant execute on function get_all_push_subscriptions to anon, authenticated, service_role;
+
+create or replace function delete_expired_push_subscriptions(endpoints text[])
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.push_subscriptions where endpoint = any(endpoints);
+$$;
+
+grant execute on function delete_expired_push_subscriptions to anon, authenticated, service_role;
+
+

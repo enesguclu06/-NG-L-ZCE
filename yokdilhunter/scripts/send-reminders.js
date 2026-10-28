@@ -45,15 +45,31 @@ async function sendReminders() {
   console.log(`Zaman: ${new Date().toISOString()}`)
   console.log(`Yetki Tipi: ${isServiceRole ? 'Service Role (Admin - RLS Devre Dışı) ✅' : 'Anon Key (RLS Devrede) ⚠️'}`)
 
-  // 1. Fetch all push subscriptions
-  const { data: subscriptions, error } = await supabase
-    .from('push_subscriptions')
-    .select('*')
+  // 1. Fetch all push subscriptions (try RPC function first, then table query)
+  let subscriptions = null
+  let fetchError = null
 
-  if (error) {
-    console.error('Abonelikler çekilemedi:', error.message)
-    if (error.message.includes('permission denied')) {
-      console.error('⚠️ İpucu: push_subscriptions tablosunda RLS aktif. GitHub Secrets içinde SUPABASE_SERVICE_KEY anahtarı tanımlı olmalıdır.')
+  try {
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('get_all_push_subscriptions')
+    if (!rpcErr && Array.isArray(rpcData)) {
+      subscriptions = rpcData
+      console.log('✓ Abonelikler RPC fonksiyonu ile çekildi.')
+    }
+  } catch (_) {}
+
+  if (!subscriptions) {
+    const { data: tableData, error: tableErr } = await supabase
+      .from('push_subscriptions')
+      .select('*')
+    subscriptions = tableData
+    fetchError = tableErr
+  }
+
+  if (fetchError && !subscriptions) {
+    console.error('Abonelikler çekilemedi:', fetchError.message)
+    if (fetchError.message.includes('permission denied')) {
+      console.error('\n⚠️ HIZLI ÇÖZÜM: Supabase Dashboard -> SQL Editor alanına şu komutu yapıştırıp RUN deyin:')
+      console.error('GRANT ALL ON TABLE public.push_subscriptions TO postgres, service_role, authenticated, anon;\n')
     }
     process.exit(1)
   }
@@ -61,7 +77,6 @@ async function sendReminders() {
   if (!subscriptions || subscriptions.length === 0) {
     console.log('Kayıtlı aktif bildirim abonesi bulunamadı.')
     return
-
   }
 
   console.log(`Toplam ${subscriptions.length} cihaza bildirim gönderilecek.`)

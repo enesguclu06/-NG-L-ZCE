@@ -213,19 +213,16 @@ export default function LibraryPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-4 animate-fade-up">
         {/* Category / Deck Filter */}
         <div className="relative">
-          <div className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
-            📁
-          </div>
           <select
             id="select-library-deck"
             value={catFilter}
             onChange={e => setCatFilter(e.target.value)}
-            className="input-base cursor-pointer appearance-none text-xs sm:text-sm py-2.5 pl-10 pr-8"
+            className="input-base cursor-pointer appearance-none text-xs sm:text-sm py-2.5 px-3.5 pr-8"
           >
-            <option value="all">   Tüm Listeler ({words.length})</option>
-            <option value="none">Genel (Kategorisiz)</option>
+            <option value="all">📁 Tüm Listeler ({words.length})</option>
+            <option value="none">📁 Genel (Kategorisiz)</option>
             {decks.map(deck => (
-              <option key={deck.id} value={deck.id}>{deck.name}</option>
+              <option key={deck.id} value={deck.id}>🏷️ {deck.name}</option>
             ))}
           </select>
           <div className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs">
@@ -235,14 +232,11 @@ export default function LibraryPage() {
 
         {/* Sort By Dropdown */}
         <div className="relative">
-          <div className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
-            ↕️
-          </div>
           <select
             id="select-library-sort"
             value={sortBy}
             onChange={e => handleSortChange(e.target.value)}
-            className="input-base cursor-pointer appearance-none text-xs sm:text-sm py-2.5 pl-10 pr-8 font-medium text-slate-200"
+            className="input-base cursor-pointer appearance-none text-xs sm:text-sm py-2.5 px-3.5 pr-8 font-medium text-slate-200"
           >
             <option value="newest">✨ En Yeni Eklenen</option>
             <option value="oldest">⏳ En Eski Eklenen</option>
