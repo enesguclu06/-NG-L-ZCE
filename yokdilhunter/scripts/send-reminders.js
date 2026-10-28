@@ -11,8 +11,8 @@ import dotenv from 'dotenv'
 // Load .env if running locally
 dotenv.config()
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://vovqngmllgbbfziarmqd.supabase.co'
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
 const VAPID_PUBLIC_KEY = process.env.VITE_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY || 'BE7AhbJfl8S5A11XPA3Ck8tYMjsuNrvPSPB7IOceRoHh9S7XuFKGVpF9jmuFc_Mk4Bcfk18eMJ6RL-ZVX3s5Fw8'
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || 'Xf5NG8UfoANqMBYtk2IUyMkP2nOU_JovYR3TupkVp50'
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:admin@yokdilhunter.app'
@@ -22,6 +22,8 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   process.exit(1)
 }
 
+const isServiceRole = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY)
+
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -29,6 +31,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 async function sendReminders() {
   console.log('--- YOKDILHUNTER Hatırlatıcı Gönderimi Başlatılıyor ---')
   console.log(`Zaman: ${new Date().toISOString()}`)
+  console.log(`Yetki Tipi: ${isServiceRole ? 'Service Role (Admin - RLS Devre Dışı) ✅' : 'Anon Key (RLS Devrede) ⚠️'}`)
 
   // 1. Fetch all push subscriptions
   const { data: subscriptions, error } = await supabase
@@ -37,12 +40,16 @@ async function sendReminders() {
 
   if (error) {
     console.error('Abonelikler çekilemedi:', error.message)
+    if (error.message.includes('permission denied')) {
+      console.error('⚠️ İpucu: push_subscriptions tablosunda RLS aktif. GitHub Secrets içinde SUPABASE_SERVICE_KEY anahtarı tanımlı olmalıdır.')
+    }
     process.exit(1)
   }
 
   if (!subscriptions || subscriptions.length === 0) {
     console.log('Kayıtlı aktif bildirim abonesi bulunamadı.')
     return
+
   }
 
   console.log(`Toplam ${subscriptions.length} cihaza bildirim gönderilecek.`)
