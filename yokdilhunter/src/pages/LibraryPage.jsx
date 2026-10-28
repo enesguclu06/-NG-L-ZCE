@@ -5,11 +5,11 @@ import { WordCard } from '../components/words/WordCard'
 import { Toast, useToast } from '../components/Toast'
 
 const DIFFICULTY_FILTERS = [
-  { key: 'all',      label: 'Tümü' },
-  { key: 'unrated',  label: '⬤ Değerlendirilmemiş' },
-  { key: 'easy',     label: '⬤ Kolay' },
-  { key: 'medium',   label: '⬤ Orta' },
-  { key: 'hard',     label: '⬤ Zor' },
+  { key: 'all', label: 'Tümü' },
+  { key: 'unrated', label: '⬤ Değerlendirilmemiş' },
+  { key: 'easy', label: '⬤ Kolay' },
+  { key: 'medium', label: '⬤ Orta' },
+  { key: 'hard', label: '⬤ Zor' },
   { key: 'mastered', label: '🎓 Ezberledim' },
 ]
 
@@ -39,7 +39,7 @@ export default function LibraryPage() {
     setSortBy(newSort)
     try {
       localStorage.setItem('ydh_library_sort', newSort)
-    } catch {}
+    } catch { }
   }
 
   // ── Client-side filtering & sorting ────────────────────────────
@@ -74,20 +74,20 @@ export default function LibraryPage() {
           return new Date(a.created_at || 0) - new Date(b.created_at || 0)
         case 'most_reviewed':
           return ((b.review_count ?? 0) - (a.review_count ?? 0)) ||
-                 (new Date(b.created_at || 0) - new Date(a.created_at || 0))
+            (new Date(b.created_at || 0) - new Date(a.created_at || 0))
         case 'least_reviewed':
           return ((a.review_count ?? 0) - (b.review_count ?? 0)) ||
-                 (new Date(b.created_at || 0) - new Date(a.created_at || 0))
+            (new Date(b.created_at || 0) - new Date(a.created_at || 0))
         case 'alpha_asc':
           return (a.english_word || '').localeCompare(b.english_word || '', 'en', { sensitivity: 'base' })
         case 'alpha_desc':
           return (b.english_word || '').localeCompare(a.english_word || '', 'en', { sensitivity: 'base' })
         case 'difficulty_desc':
           return ((diffWeight[b.difficulty] ?? 0) - (diffWeight[a.difficulty] ?? 0)) ||
-                 (new Date(b.created_at || 0) - new Date(a.created_at || 0))
+            (new Date(b.created_at || 0) - new Date(a.created_at || 0))
         case 'difficulty_asc':
           return ((diffWeight[a.difficulty] ?? 0) - (diffWeight[b.difficulty] ?? 0)) ||
-                 (new Date(b.created_at || 0) - new Date(a.created_at || 0))
+            (new Date(b.created_at || 0) - new Date(a.created_at || 0))
         default:
           return new Date(b.created_at || 0) - new Date(a.created_at || 0)
       }
@@ -125,7 +125,7 @@ export default function LibraryPage() {
     }
 
     const headers = ['İngilizce Kelime', 'Türkçe Çeviri', 'Tanım', 'Eş Anlamlılar', 'Okunuş', 'Zorluk', 'Liste']
-    
+
     const rows = words.map(w => {
       const escape = (str) => `"${(str || '').toString().replace(/"/g, '""')}"`
       return [
@@ -142,7 +142,7 @@ export default function LibraryPage() {
     const csvContent = "\uFEFF" + [headers.join(','), ...rows].join('\n') // Added BOM for Excel UTF-8 support
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
-    
+
     const link = document.createElement('a')
     link.setAttribute('href', url)
     link.setAttribute('download', `yokdilhunter_kelimeler_${new Date().toISOString().split('T')[0]}.csv`)
@@ -173,7 +173,7 @@ export default function LibraryPage() {
           <p className="text-slate-400 text-sm mt-0.5">{words.length} kelime kayıtlı</p>
         </div>
         <div className="flex items-center gap-3">
-          <button 
+          <button
             onClick={handleExportCSV}
             className="p-2 rounded-xl bg-base-800 border border-white/[0.06] text-slate-400 hover:text-white hover:bg-base-700 transition-colors"
             title="CSV Olarak İndir"
@@ -222,7 +222,7 @@ export default function LibraryPage() {
             onChange={e => setCatFilter(e.target.value)}
             className="input-base cursor-pointer appearance-none text-xs sm:text-sm py-2.5 pl-10 pr-8"
           >
-            <option value="all">Tüm Listeler ({words.length})</option>
+            <option value="all">   Tüm Listeler ({words.length})</option>
             <option value="none">Genel (Kategorisiz)</option>
             {decks.map(deck => (
               <option key={deck.id} value={deck.id}>{deck.name}</option>

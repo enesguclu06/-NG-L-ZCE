@@ -7,6 +7,13 @@
 import webpush from 'web-push'
 import { createClient } from '@supabase/supabase-js'
 import dotenv from 'dotenv'
+import WebSocket from 'ws'
+
+// Polyfill WebSocket for environments where native WebSocket is missing
+if (typeof globalThis.WebSocket === 'undefined') {
+  globalThis.WebSocket = WebSocket
+}
+
 
 // Load .env if running locally
 dotenv.config()
