@@ -367,6 +367,29 @@ function isElementOverVideo(el, video) {
 }
 
 // ── Subtitle-Specific Word Extractor ────────────────────────────────────────
+function isElementVisible(el) {
+  if (!el || !el.isConnected) return false;
+  try {
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none') return false;
+    if (style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+    const op = parseFloat(style.opacity);
+    if (!isNaN(op) && op <= 0.1) return false;
+
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 10 || rect.height < 8) return false;
+    if (rect.bottom < 0 || rect.top > window.innerHeight) return false;
+    if (rect.right < 0 || rect.left > window.innerWidth) return false;
+
+    if (el.offsetParent === null && style.position !== 'fixed' && style.position !== 'sticky') {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function extractSubtitleWordAtPoint(x, y) {
   // If pointer is directly over a button, menu, slider, or player control bar, ignore
   const topEl = document.elementFromPoint ? document.elementFromPoint(x, y) : null;
@@ -388,6 +411,7 @@ function extractSubtitleWordAtPoint(x, y) {
       const candidates = root.querySelectorAll(SUBTITLE_SELECTORS.join(','));
       for (const el of candidates) {
         if (!el || isPlayerControlOrUI(el)) continue;
+        if (!isElementVisible(el)) continue;
         const rect = el.getBoundingClientRect();
         if (x >= rect.left - 15 && x <= rect.right + 15 && y >= rect.top - 15 && y <= rect.bottom + 15) {
           const match = findWordInElementAt(el, x, y);
@@ -406,7 +430,7 @@ function extractSubtitleWordAtPoint(x, y) {
       if (el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip') || el.id === 'ydh-notification-toast' || el.id === 'ydh-sub-translation-bar') continue;
 
       const isSubEl = el.matches?.(SUBTITLE_SELECTORS.join(',')) || el.closest?.(SUBTITLE_SELECTORS.join(','));
-      if (isSubEl) {
+      if (isSubEl && isElementVisible(el)) {
         const match = findWordInElementAt(el, x, y);
         if (match) return { ...match, isSubtitle: true, video };
       }
@@ -595,6 +619,8 @@ function findActiveSubtitleCue() {
       if (el.id === 'ydh-sub-translation-bar' || el.closest?.('#ydh-sub-translation-bar')) continue;
       if (el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip')) continue;
 
+      if (!isElementVisible(el)) continue;
+
       const rect = el.getBoundingClientRect();
       // Strict geometry sanity check: subtitle cues are never full-screen wrapper overlays!
       if (
@@ -614,45 +640,96 @@ function findActiveSubtitleCue() {
     }
   } catch {}
 
-  // Fallback: check native HTML5 video text tracks or preloaded cues
-  if (visibleCandidates.length === 0) {
-    try {
-      const videos = document.querySelectorAll('video');
-      for (const v of videos) {
-        if (!v.paused && v.textTracks) {
-          for (let i = 0; i < v.textTracks.length; i++) {
-            const track = v.textTracks[i];
-            if (track.mode === 'showing' && track.activeCues && track.activeCues.length > 0) {
-              const cue = track.activeCues[0];
-              const text = (cue.text || '').replace(/<[^>]+>/g, '').trim();
-              if (text.length >= 2 && /[a-zA-Z]/.test(text)) {
-                const vRect = v.getBoundingClientRect();
-                return {
-                  el: v,
-                  text,
-                  rect: {
-                    top: vRect.bottom - 95,
-                    bottom: vRect.bottom - 45,
-                    left: vRect.left + vRect.width * 0.15,
-                    right: vRect.left + vRect.width * 0.85,
-                    width: vRect.width * 0.7,
-                    height: 50
-                  }
-                };
-              }
+  // Discard parent wrapper elements if a more specific child candidate is present
+  const nonRedundant = [];
+  for (const item of visibleCandidates) {
+    const hasChildCandidate = visibleCandidates.some(other => other !== item && item.el.contains(other.el));
+    if (!hasChildCandidate) {
+      nonRedundant.push(item);
+    }
+  }
+
+  if (nonRedundant.length > 0) {
+    // Sort in visual reading order (top to bottom)
+    nonRedundant.sort((a, b) => a.rect.top - b.rect.top);
+
+    // De-duplicate lines
+    const uniqueLines = [];
+    for (const item of nonRedundant) {
+      const isDup = uniqueLines.some(u => u.text === item.text || u.text.includes(item.text));
+      if (!isDup) uniqueLines.push(item);
+    }
+
+    if (uniqueLines.length > 0) {
+      const fullText = uniqueLines.map(u => u.text).join(' ');
+      let minTop = uniqueLines[0].rect.top;
+      let maxBottom = uniqueLines[0].rect.bottom;
+      let minLeft = uniqueLines[0].rect.left;
+      let maxRight = uniqueLines[0].rect.right;
+
+      for (const u of uniqueLines) {
+        minTop = Math.min(minTop, u.rect.top);
+        maxBottom = Math.max(maxBottom, u.rect.bottom);
+        minLeft = Math.min(minLeft, u.rect.left);
+        maxRight = Math.max(maxRight, u.rect.right);
+      }
+
+      return {
+        el: uniqueLines[0].el,
+        text: fullText,
+        rect: {
+          top: minTop,
+          bottom: maxBottom,
+          left: minLeft,
+          right: maxRight,
+          width: maxRight - minLeft,
+          height: maxBottom - minTop
+        }
+      };
+    }
+  }
+
+  // Fallback 1: check native HTML5 video text tracks
+  try {
+    const videos = document.querySelectorAll('video');
+    for (const v of videos) {
+      if (!v.paused && v.textTracks) {
+        for (let i = 0; i < v.textTracks.length; i++) {
+          const track = v.textTracks[i];
+          if (track.mode === 'showing' && track.activeCues && track.activeCues.length > 0) {
+            const cue = track.activeCues[0];
+            const text = (cue.text || '').replace(/<[^>]+>/g, '').trim();
+            if (text.length >= 2 && /[a-zA-Z]/.test(text)) {
+              const vRect = v.getBoundingClientRect();
+              return {
+                el: v,
+                text,
+                rect: {
+                  top: vRect.bottom - 95,
+                  bottom: vRect.bottom - 45,
+                  left: vRect.left + vRect.width * 0.15,
+                  right: vRect.left + vRect.width * 0.85,
+                  width: vRect.width * 0.7,
+                  height: 50
+                }
+              };
             }
           }
         }
       }
-    } catch {}
+    }
+  } catch {}
 
-    // Fallback 2: Check preloaded intercepted cues matching video currentTime
-    if (typeof preloadedSourceCues !== 'undefined' && preloadedSourceCues?.length > 0) {
-      try {
-        const v = document.querySelector('video');
-        if (v && !v.paused) {
-          const now = v.currentTime || 0;
-          const match = preloadedSourceCues.find(c => c.start <= (now + 0.25) && (now - 0.25) <= c.end);
+  // Fallback 2: Check preloaded intercepted cues matching video currentTime
+  if (typeof preloadedSourceCues !== 'undefined' && preloadedSourceCues?.length > 0) {
+    try {
+      const v = document.querySelector('video');
+      if (v && !v.paused) {
+        const now = v.currentTime || 0;
+        const matching = preloadedSourceCues.filter(c => c.start <= (now + 0.15) && (now - 0.15) <= c.end);
+        if (matching.length > 0) {
+          matching.sort((a, b) => b.start - a.start);
+          const match = matching[0];
           if (match && match.text) {
             const vRect = v.getBoundingClientRect();
             return {
@@ -669,51 +746,11 @@ function findActiveSubtitleCue() {
             };
           }
         }
-      } catch {}
-    }
-
-    return null;
+      }
+    } catch {}
   }
 
-  // Deduplicate nested elements and combine multi-line dialogue cues
-  visibleCandidates.sort((a, b) => b.text.length - a.text.length);
-
-  const uniqueLines = [];
-  for (const item of visibleCandidates) {
-    const isDup = uniqueLines.some(u => u.text.includes(item.text) || item.text.includes(u.text));
-    if (!isDup) uniqueLines.push(item);
-  }
-
-  if (uniqueLines.length === 0) return null;
-
-  // Sort top-to-bottom in reading order
-  uniqueLines.sort((a, b) => a.rect.top - b.rect.top);
-
-  const fullText = uniqueLines.map(u => u.text).join(' ');
-  let minTop = uniqueLines[0].rect.top;
-  let maxBottom = uniqueLines[0].rect.bottom;
-  let minLeft = uniqueLines[0].rect.left;
-  let maxRight = uniqueLines[0].rect.right;
-
-  for (const u of uniqueLines) {
-    minTop = Math.min(minTop, u.rect.top);
-    maxBottom = Math.max(maxBottom, u.rect.bottom);
-    minLeft = Math.min(minLeft, u.rect.left);
-    maxRight = Math.max(maxRight, u.rect.right);
-  }
-
-  return {
-    el: uniqueLines[0].el,
-    text: fullText,
-    rect: {
-      top: minTop,
-      bottom: maxBottom,
-      left: minLeft,
-      right: maxRight,
-      width: maxRight - minLeft,
-      height: maxBottom - minTop
-    }
-  };
+  return null;
 }
 
 // ── Subtitle Translation Bar Management ─────────────────────────────────────
@@ -935,17 +972,7 @@ function showSubBar(sentence, anchorRect, isDual = false) {
 
   currentSubSentence = sentence;
 
-  // 1. Instant Official Turkish Track (0 ms!)
-  const nativeTr = getNativeTurkishTrackCue();
-  if (nativeTr) {
-    textEl.textContent = nativeTr;
-    textEl.classList.remove('ydh-sub-loading');
-    updateSubBarPosition(subBar, anchorRect, container);
-    subBar.classList.add('ydh-sub-visible');
-    return;
-  }
-
-  // 2. Instant Memory Cache (0 ms!)
+  // 1. Instant Memory Cache (0 ms - previously pre-warmed)
   if (sentenceCache.has(sentence)) {
     textEl.textContent = sentenceCache.get(sentence);
     textEl.classList.remove('ydh-sub-loading');
@@ -954,7 +981,7 @@ function showSubBar(sentence, anchorRect, isDual = false) {
     return;
   }
 
-  // 3. Ultra-Fast ~100ms Translation (with instant snap)
+  // 2. Direct sentence translation (Guaranteed 100% exact sentence-to-sentence translation)
   getSentenceTranslation(sentence).then((tr) => {
     if (currentSubSentence === sentence && subBar) {
       textEl.textContent = tr || sentence;

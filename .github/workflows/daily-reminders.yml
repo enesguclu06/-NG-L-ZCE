@@ -1,10 +1,11 @@
-name: Daily Word Reminders (10:00 & 22:00 TR)
+name: Daily Word Reminders (10:15 & 21:45 TR)
 
 on:
   schedule:
-    # 07:00 UTC = 10:00 Turkey Time (UTC+3)
-    # 19:00 UTC = 22:00 Turkey Time (UTC+3)
-    - cron: '0 7,19 * * *'
+    # 07:15 UTC = 10:15 Turkey Time (UTC+3) - Avoids :00 GitHub queue congestion
+    # 18:45 UTC = 21:45 Turkey Time (UTC+3) - Timely evening reminder before bedtime
+    - cron: '15 7 * * *'
+    - cron: '45 18 * * *'
   workflow_dispatch: # Allows manual trigger from GitHub Actions tab
 
 jobs:

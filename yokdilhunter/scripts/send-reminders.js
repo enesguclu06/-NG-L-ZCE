@@ -42,8 +42,34 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 
 async function sendReminders() {
   console.log('--- YOKDILHUNTER Hatırlatıcı Gönderimi Başlatılıyor ---')
-  console.log(`Zaman: ${new Date().toISOString()}`)
+  console.log(`Zaman (UTC): ${new Date().toISOString()}`)
   console.log(`Yetki Tipi: ${isServiceRole ? 'Service Role (Admin - RLS Devre Dışı) ✅' : 'Anon Key (RLS Devrede) ⚠️'}`)
+
+  const isForced = process.argv.includes('--force')
+
+  // Calculate local time in Turkey (Europe/Istanbul - UTC+3)
+  const now = new Date()
+  const trTimeFormatter = new Intl.DateTimeFormat('tr-TR', {
+    timeZone: 'Europe/Istanbul',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const trTimeStr = trTimeFormatter.format(now)
+  const [trHour, trMin] = trTimeStr.split(':').map(Number)
+
+  console.log(`Türkiye Saati: ${trTimeStr} (UTC+3)`)
+
+  // Quiet Hours Guard:
+  // GitHub Actions schedules can be delayed by hours during peak queue times.
+  // Never send push notifications in the middle of the night (23:30 - 08:30 TR) unless manually forced.
+  const isQuietHours = (trHour >= 23 && trMin >= 30) || (trHour >= 0 && trHour < 8) || (trHour === 8 && trMin < 30)
+  if (isQuietHours && !isForced) {
+    console.log('\n🌙 [Gece Rahatsız Etmeme Koruması]')
+    console.log(`Şu an Türkiye saatiyle gece ${trTimeStr}. GitHub Actions veya cron gecikmesi nedeniyle bildirim gönderimi iptal edildi.`)
+    console.log('Kullanıcı uykusunda rahatsız edilmedi. (Manuel test için: node scripts/send-reminders.js --force)\n')
+    process.exit(0)
+  }
 
   // 1. Fetch all push subscriptions (try RPC function first, then table query)
   let subscriptions = null
