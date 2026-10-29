@@ -254,32 +254,32 @@ export default function ReviewPage() {
             </div>
 
             {/* ── Main Tab Switcher ── */}
-            <div className="flex gap-2 p-1.5 bg-base-800 rounded-2xl border border-white/[0.06]">
+            <div className="flex gap-1.5 p-1 sm:p-1.5 bg-base-800 rounded-2xl border border-white/[0.06]">
               <button
                 type="button"
                 onClick={() => setActiveTab('modes')}
-                className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
+                className={`flex-1 py-2.5 sm:py-3 px-2 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 ${
                   activeTab === 'modes'
                     ? 'bg-primary-500 text-white shadow-glow-primary'
                     : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
                 }`}
               >
                 <span>🎯</span>
-                <span>Akıllı Modlar</span>
+                <span className="truncate">Akıllı Modlar</span>
               </button>
               <button
                 type="button"
                 id="tab-history-review"
                 onClick={() => setActiveTab('history')}
-                className={`flex-1 py-3 px-4 rounded-xl text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
+                className={`flex-1 py-2.5 sm:py-3 px-2 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 ${
                   activeTab === 'history'
                     ? 'bg-primary-500 text-white shadow-glow-primary'
                     : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
                 }`}
               >
                 <span>🗓️</span>
-                <span>Geçmiş Gün Tekrarı</span>
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                <span className="truncate">Geçmiş Gün Tekrarı</span>
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
                   Yeni
                 </span>
               </button>

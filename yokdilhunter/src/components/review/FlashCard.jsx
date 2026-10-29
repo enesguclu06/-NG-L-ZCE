@@ -41,15 +41,15 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
     <div
       className="flip-card w-full"
       style={{
-        minHeight: '660px',
-        height: 'calc(100dvh - 160px)',
-        maxHeight: '850px'
+        minHeight: 'min(460px, calc(100dvh - 190px))',
+        height: 'calc(100dvh - 180px)',
+        maxHeight: '760px',
       }}
       onClick={!isFlipped ? onFlip : undefined}
     >
       <div className={`flip-card-inner ${isFlipped ? 'flipped' : ''}`}>
         {/* ── Front ── */}
-        <div className="flip-card-front glass flex flex-col items-center justify-center p-8 cursor-pointer select-none group relative">
+        <div className="flip-card-front glass flex flex-col items-center justify-center p-5 sm:p-8 cursor-pointer select-none group relative">
           {/* Subtle glow on hover */}
           <div className="absolute inset-0 rounded-[1.25rem] bg-primary-500/0 group-hover:bg-primary-500/[0.03] transition-colors duration-300 pointer-events-none" />
 
@@ -73,18 +73,18 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
 
           <div className="text-center relative z-10 w-full max-w-lg">
             {/* Word label */}
-            <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-4">İngilizce</p>
+            <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">İngilizce</p>
             
-            <div className="flex items-center justify-center gap-3 mb-3">
-              <h2 className="text-5xl sm:text-6xl font-black text-white leading-tight break-words hyphens-auto">
+            <div className="flex items-center justify-center gap-2 sm:gap-3 mb-3">
+              <h2 className="text-3xl sm:text-5xl md:text-6xl font-black text-white leading-tight break-words hyphens-auto px-2">
                 {word.english_word}
               </h2>
               <button
                 onClick={(e) => { e.stopPropagation(); playAudio(word.english_word) }}
-                className="text-primary-400 hover:text-primary-300 p-2 rounded-full hover:bg-primary-500/20 transition-all shrink-0 active:scale-95"
+                className="text-primary-400 hover:text-primary-300 p-1.5 sm:p-2 rounded-full hover:bg-primary-500/20 transition-all shrink-0 active:scale-95"
                 title="Dinle"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7 sm:w-8 sm:h-8">
                   <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06Z" />
                   <path d="M15.932 7.757a.75.75 0 0 1 1.061 0 4.5 4.5 0 0 1 0 6.364.75.75 0 0 1-1.06-1.06 3 3 0 0 0 0-4.243.75.75 0 0 1 0-1.061Z" />
                 </svg>
@@ -115,7 +115,7 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
         </div>
 
         {/* ── Back ── */}
-        <div className={`flip-card-back glass flex flex-col p-6 overflow-y-auto relative transition-opacity duration-200 ${isFlipped ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+        <div className={`flip-card-back glass flex flex-col p-4 sm:p-6 overflow-y-auto relative transition-opacity duration-200 ${isFlipped ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           {/* Delete Button (Back - top right) */}
           {onDelete && (
             <button
@@ -125,7 +125,7 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
                 e.stopPropagation()
                 onDelete()
               }}
-              className="absolute top-4 right-4 p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all z-30"
+              className="absolute top-3 right-3 sm:top-4 sm:right-4 p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all z-30"
               title="Kelimeyi Sil"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -134,10 +134,10 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
             </button>
           )}
           {/* Word header — sticky at the top so English word NEVER disappears when scrolling */}
-          <div className="sticky top-0 bg-base-800/95 backdrop-blur-md pb-3 pt-1 z-20 border-b border-white/[0.06] -mx-6 px-6 mb-3 text-center">
+          <div className="sticky top-0 bg-base-800/95 backdrop-blur-md pb-2.5 pt-1 z-20 border-b border-white/[0.06] -mx-4 sm:-mx-6 px-4 sm:px-6 mb-3 text-center">
             <p className="text-slate-500 text-[10px] font-semibold uppercase tracking-widest mb-1">İngilizce</p>
             <div className="flex items-center justify-center gap-2">
-              <h2 className="text-2xl sm:text-3xl font-black text-white break-words">{word.english_word}</h2>
+              <h2 className="text-xl sm:text-3xl font-black text-white break-words">{word.english_word}</h2>
               <button
                 onClick={(e) => { e.stopPropagation(); playAudio(word.english_word) }}
                 className="text-primary-400 hover:text-primary-300 p-1.5 rounded-full hover:bg-primary-500/20 transition-all shrink-0 active:scale-95"

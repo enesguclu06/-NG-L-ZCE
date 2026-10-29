@@ -48,7 +48,7 @@ export function recordReviewLog(userId, word, difficulty) {
 }
 
 /**
- * Retrieves all review history by combining localStorage logs with database last_reviewed_at timestamps.
+ * Retrieves all review history by combining localStorage logs with database last_reviewed_at and created_at timestamps.
  */
 export function getAllReviewHistory(words = [], userId = null) {
   let localLogs = []
@@ -59,11 +59,13 @@ export function getAllReviewHistory(words = [], userId = null) {
     localLogs = []
   }
 
-  // Synthesize entries for words in database that have last_reviewed_at
+  // Synthesize entries for words in database
   const syntheticLogs = []
   const wordMap = new Map()
   for (const w of words) {
     wordMap.set(w.id, w)
+
+    // 1. Review events from database last_reviewed_at
     if (w.last_reviewed_at) {
       const dayKey = getLocalDateKey(w.last_reviewed_at)
       const alreadyLogged = localLogs.some(
@@ -77,9 +79,25 @@ export function getAllReviewHistory(words = [], userId = null) {
           turkish_translation: w.turkish_translation,
           difficulty: w.difficulty || 'medium',
           reviewed_at: w.last_reviewed_at,
+          created_at: w.created_at,
           from_db: true,
         })
       }
+    }
+
+    // 2. Addition events from database created_at (incorporates newly added words into date selection)
+    if (w.created_at) {
+      syntheticLogs.push({
+        id: `created_${w.id}_${w.created_at}`,
+        word_id: w.id,
+        english_word: w.english_word,
+        turkish_translation: w.turkish_translation,
+        difficulty: 'unrated', // newly added
+        is_new_addition: true,
+        reviewed_at: w.created_at, // Event date = addition date
+        created_at: w.created_at,
+        from_db: true,
+      })
     }
   }
 
@@ -116,6 +134,7 @@ export function getReviewDaysSummary(reviewHistory = []) {
         label,
         formattedDate: d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'short' }),
         wordsSet: new Set(),
+        unrated: 0,
         easy: 0,
         medium: 0,
         hard: 0,
@@ -126,7 +145,8 @@ export function getReviewDaysSummary(reviewHistory = []) {
     const g = groups.get(key)
     if (!g.wordsSet.has(item.word_id)) {
       g.wordsSet.add(item.word_id)
-      if (item.difficulty === 'easy') g.easy++
+      if (item.difficulty === 'unrated') g.unrated++
+      else if (item.difficulty === 'easy') g.easy++
       else if (item.difficulty === 'medium') g.medium++
       else if (item.difficulty === 'hard') g.hard++
       else if (item.difficulty === 'mastered') g.mastered++
@@ -202,14 +222,14 @@ export function matchesDatePreset(dateInput, preset, customDateKey = null) {
  *   preset: 'today' | 'yesterday' | 'last7days' | 'prevWeek' | 'custom'
  *   customDateKey: 'YYYY-MM-DD' | string[]
  *   customDates: string[]
- *   difficulties: ['easy', 'medium', 'hard']
+ *   difficulties: ['unrated', 'easy', 'medium', 'hard', 'mastered']
  *   deckId: 'all' | 'none' | string
  */
 export function filterWordsByHistory(reviewHistory, words, {
   preset = 'today',
   customDateKey = null,
   customDates = null,
-  difficulties = ['easy', 'medium', 'hard'],
+  difficulties = ['unrated', 'hard', 'medium', 'easy', 'mastered'],
   deckId = 'all',
 }) {
   const activeCustomDates = customDates ?? customDateKey
@@ -240,7 +260,9 @@ export function filterWordsByHistory(reviewHistory, words, {
           ...word,
           _historyMeta: {
             reviewed_at: entry.reviewed_at,
+            created_at: word.created_at,
             difficulty: entry.difficulty,
+            is_new_addition: entry.is_new_addition,
           },
         },
         difficulty: entry.difficulty,
@@ -290,7 +312,7 @@ export function getDifficultyCountsForDate(reviewHistory, words, {
     }
   }
 
-  const counts = { easy: 0, medium: 0, hard: 0, mastered: 0, total: seenWordIds.size }
+  const counts = { unrated: 0, easy: 0, medium: 0, hard: 0, mastered: 0, total: seenWordIds.size }
   for (const diff of seenWordIds.values()) {
     if (counts[diff] !== undefined) counts[diff]++
   }
