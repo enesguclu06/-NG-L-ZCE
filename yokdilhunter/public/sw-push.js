@@ -1,4 +1,4 @@
-// Service Worker Push Notification Handler for YOKDILHUNTER
+// Service Worker Push Notification Handler for Enesglish
 
 self.addEventListener('push', function (event) {
   let data = {}
@@ -6,17 +6,17 @@ self.addEventListener('push', function (event) {
     try {
       data = event.data.json()
     } catch (e) {
-      data = { title: 'YOKDILHUNTER 🎯', body: event.data.text() }
+      data = { title: 'Enesglish 🎯', body: event.data.text() }
     }
   }
 
-  const title = data.title || 'YOKDILHUNTER 🎯'
+  const title = data.title || 'Enesglish 🎯'
   const options = {
     body: data.body || 'Kelime ezberleme vakti! Bugün tekrar etmen gereken kelimeleri unutma 📚',
-    icon: data.icon || '/icons/icon-192.png',
-    badge: data.badge || '/icons/icon-192.png',
+    icon: data.icon || '/favicon.svg',
+    badge: data.badge || '/favicon.svg',
     vibrate: [200, 100, 200],
-    tag: 'yokdilhunter-daily-reminder',
+    tag: 'enesglish-daily-reminder',
     renotify: true,
     data: data.data || { url: '/review' },
     actions: [

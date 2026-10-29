@@ -5,15 +5,15 @@ import { fetchWordData, fetchTranslation } from './lib/api.js';
 chrome.runtime.onInstalled.addListener(() => {
   // Create Context Menu item
   chrome.contextMenus.create({
-    id: "save-to-yokdilhunter",
-    title: "📚 YOKDILHUNTER'a Kaydet",
+    id: "save-to-enesglish",
+    title: "🎯 Enesglish'e Kaydet",
     contexts: ["selection"]
   });
 });
 
 // ── Context Menu Click Handler ───────────────────────────────────────────────
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === "save-to-yokdilhunter") {
+  if (info.menuItemId === "save-to-enesglish" || info.menuItemId === "save-to-yokdilhunter") {
     const selectedText = info.selectionText?.trim();
     if (selectedText) {
       let contextSentence = null;
@@ -75,7 +75,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
         chrome.notifications.create('pdf-hint', {
           type: 'basic',
           iconUrl: '../icons/icon-192.png',
-          title: 'YOKDILHUNTER',
+          title: 'Enesglish',
           message: 'PDF\'de kelimeyi Ctrl+C ile kopyala, sonra Ctrl+Shift+S yap. ℹ️',
         });
         return;
@@ -87,14 +87,14 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
         chrome.notifications.create('pdf-saved', {
           type: 'basic',
           iconUrl: '../icons/icon-192.png',
-          title: 'YOKDILHUNTER ✅',
+          title: 'Enesglish ✅',
           message: `"${word}" kaydedildi!`,
         });
       } catch (err) {
         chrome.notifications.create('pdf-error', {
           type: 'basic',
           iconUrl: '../icons/icon-192.png',
-          title: 'YOKDILHUNTER ❌',
+          title: 'Enesglish ❌',
           message: err.message,
         });
       }

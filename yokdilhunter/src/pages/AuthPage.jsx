@@ -81,11 +81,11 @@ export default function AuthPage() {
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-12 relative z-10">
         {/* ── Hero ── */}
         <div className="text-center mb-10 animate-fade-up">
-          <div className="w-20 h-20 mx-auto mb-5 rounded-3xl bg-gradient-to-br from-primary-500 to-accent-400 flex items-center justify-center shadow-glow-primary">
-            <span className="text-white text-3xl font-black">Y</span>
+          <div className="w-20 h-20 mx-auto mb-5 rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-fuchsia-500 flex items-center justify-center shadow-glow-primary border border-white/20">
+            <span className="text-white text-3xl font-black tracking-tight drop-shadow-md">EG</span>
           </div>
           <h1 className="text-4xl font-black tracking-tight gradient-text mb-2">
-            YOKDILHUNTER
+            Enesglish
           </h1>
           <p className="text-slate-400 text-sm font-medium">
             İngilizce kelimeleri yakala, Türkçesiyle öğren

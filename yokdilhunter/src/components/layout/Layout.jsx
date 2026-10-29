@@ -32,11 +32,11 @@ export function Layout({ children }) {
       <header className="sticky top-0 z-30 bg-base-900/80 backdrop-blur-md border-b border-white/[0.06]">
         <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto w-full">
           {/* Logo */}
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-500 to-accent-400 flex items-center justify-center shadow-glow-primary">
-              <span className="text-white text-xs font-black">YDH</span>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-500 via-primary-400 to-accent-400 flex items-center justify-center shadow-glow-primary border border-white/10">
+              <span className="text-white text-xs font-black tracking-tighter">EG</span>
             </div>
-            <span className="font-black text-sm tracking-widest gradient-text">YOKDILHUNTER</span>
+            <span className="font-black text-base tracking-wide gradient-text">Enesglish</span>
           </div>
 
           {/* Right side */}

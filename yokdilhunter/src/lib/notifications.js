@@ -179,12 +179,12 @@ export async function sendLocalTestNotification() {
   }
 
   const reg = await navigator.serviceWorker.ready
-  await reg.showNotification('YOKDILHUNTER 🎯', {
+  await reg.showNotification('Enesglish 🎯', {
     body: 'Harika! Telefon bildirimlerin başarıyla açıldı. Her gün 10:00 ve 22:00\'de hatırlatıcı alacaksın. 🎉',
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
+    icon: '/favicon.svg',
+    badge: '/favicon.svg',
     vibrate: [200, 100, 200],
-    tag: 'yokdilhunter-test',
+    tag: 'enesglish-test',
     data: { url: '/review' },
   })
 }

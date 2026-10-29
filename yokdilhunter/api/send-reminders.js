@@ -59,10 +59,10 @@ export default async function handler(req, res) {
     }
 
     const payload = JSON.stringify({
-      title: 'YOKDILHUNTER 🎯',
+      title: 'Enesglish 🎯',
       body: 'Kelime ezberleme vakti! Bugün tekrar etmen gereken kelimeleri unutma 📚',
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
+      icon: '/favicon.svg',
+      badge: '/favicon.svg',
       data: { url: '/review' },
     })
 

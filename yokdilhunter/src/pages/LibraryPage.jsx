@@ -145,7 +145,7 @@ export default function LibraryPage() {
 
     const link = document.createElement('a')
     link.setAttribute('href', url)
-    link.setAttribute('download', `yokdilhunter_kelimeler_${new Date().toISOString().split('T')[0]}.csv`)
+    link.setAttribute('download', `enesglish_kelimeler_${new Date().toISOString().split('T')[0]}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)

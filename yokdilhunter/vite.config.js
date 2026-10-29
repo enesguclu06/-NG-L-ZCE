@@ -9,9 +9,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'icons/*.png', 'sw-push.js'],
       manifest: {
-        name: 'YOKDILHUNTER',
-        short_name: 'YDH',
-        description: 'İngilizce kelime öğrenme uygulaması — flashcard ve çeviri desteğiyle',
+        name: 'Enesglish',
+        short_name: 'Enesglish',
+        description: 'Enesglish — İngilizce kelime öğrenme uygulaması, flashcard ve akıllı tekrar sistemi',
         theme_color: '#0f0f1a',
         background_color: '#0f0f1a',
         display: 'standalone',

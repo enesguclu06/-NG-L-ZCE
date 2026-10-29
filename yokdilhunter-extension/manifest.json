@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "YOKDILHUNTER",
+  "name": "Enesglish",
   "version": "1.0",
-  "description": "Seçilen İngilizce kelimeleri YOKDILHUNTER veritabanına kaydeder.",
+  "description": "Seçilen İngilizce kelimeleri Enesglish veritabanına kaydeder.",
   "action": {
     "default_popup": "popup/popup.html"
   },

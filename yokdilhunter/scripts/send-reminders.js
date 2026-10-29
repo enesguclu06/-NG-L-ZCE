@@ -41,7 +41,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 })
 
 async function sendReminders() {
-  console.log('--- YOKDILHUNTER Hatırlatıcı Gönderimi Başlatılıyor ---')
+  console.log('--- Enesglish Hatırlatıcı Gönderimi Başlatılıyor ---')
   console.log(`Zaman (UTC): ${new Date().toISOString()}`)
   console.log(`Yetki Tipi: ${isServiceRole ? 'Service Role (Admin - RLS Devre Dışı) ✅' : 'Anon Key (RLS Devrede) ⚠️'}`)
 
@@ -108,10 +108,10 @@ async function sendReminders() {
   console.log(`Toplam ${subscriptions.length} cihaza bildirim gönderilecek.`)
 
   const payload = JSON.stringify({
-    title: 'YOKDILHUNTER 🎯',
+    title: 'Enesglish 🎯',
     body: 'Kelime ezberleme vakti! Bugün tekrar etmen gereken kelimeleri unutma 📚',
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
+    icon: '/favicon.svg',
+    badge: '/favicon.svg',
     data: { url: '/review' },
   })
 
