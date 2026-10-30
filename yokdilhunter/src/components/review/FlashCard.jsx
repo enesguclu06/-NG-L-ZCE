@@ -8,9 +8,30 @@ import { fetchExampleSentence } from '../../lib/api'
  * Front: English word + phonetic + tap prompt
  * Back:  Turkish translation + definition + synonyms + difficulty buttons
  */
-export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWord, onDelete }) {
+export function FlashCard({
+  word,
+  isFlipped,
+  onFlip,
+  onRate,
+  onSkip,
+  onUpdateWord,
+  onDelete,
+  autoSpeak = true,
+  onToggleAutoSpeak,
+}) {
   const [fetchingExample, setFetchingExample] = useState(false)
   const [backExample, setBackExample] = useState(word?.example_sentence ?? '')
+
+  // Otomatik ses çalma: Kart değiştiğinde (yeni kelimeye geçildiğinde) çalışır
+  useEffect(() => {
+    if (autoSpeak && word?.english_word) {
+      // Küçük bir gecikmeyle kart geçiş animasyonuna uyumlu başlat
+      const timer = setTimeout(() => {
+        playAudio(word.english_word)
+      }, 150)
+      return () => clearTimeout(timer)
+    }
+  }, [word?.id, word?.english_word, autoSpeak])
 
   useEffect(() => {
     setBackExample(word?.example_sentence ?? '')
@@ -53,23 +74,55 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
           {/* Subtle glow on hover */}
           <div className="absolute inset-0 rounded-[1.25rem] bg-primary-500/0 group-hover:bg-primary-500/[0.03] transition-colors duration-300 pointer-events-none" />
 
-          {/* Delete Button (Front) */}
-          {onDelete && (
-            <button
-              type="button"
-              id="btn-delete-flashcard-front"
-              onClick={(e) => {
-                e.stopPropagation()
-                onDelete()
-              }}
-              className="absolute top-4 right-4 p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all z-20"
-              title="Kelimeyi Sil"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-              </svg>
-            </button>
-          )}
+          {/* Action buttons (Top Right): Auto Speak Toggle & Delete */}
+          <div className="absolute top-3 right-3 sm:top-4 sm:right-4 flex items-center gap-1.5 z-20">
+            {onToggleAutoSpeak && (
+              <button
+                type="button"
+                id="btn-toggle-auto-speak-front"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggleAutoSpeak()
+                }}
+                className={`p-2 rounded-xl border transition-all ${
+                  autoSpeak
+                    ? 'text-primary-300 bg-primary-500/15 border-primary-500/30 hover:bg-primary-500/25 shadow-glow-primary'
+                    : 'text-slate-400 bg-base-800/80 border-white/10 hover:text-slate-200 hover:bg-base-700'
+                }`}
+                title={autoSpeak ? 'Otomatik Ses: Açık (Kapatmak için tıkla)' : 'Otomatik Ses: Kapalı (Açmak için tıkla)'}
+              >
+                {autoSpeak ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                    <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06Z" />
+                    <path d="M15.932 7.757a.75.75 0 0 1 1.061 0 4.5 4.5 0 0 1 0 6.364.75.75 0 0 1-1.06-1.06 3 3 0 0 0 0-4.243.75.75 0 0 1 0-1.061Z" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 opacity-70">
+                    <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06Z" />
+                    <path d="M17.28 9.22a.75.75 0 1 0-1.06 1.06L18.44 12l-2.22 2.22a.75.75 0 1 0 1.06 1.06L19.5 13.06l2.22 2.22a.75.75 0 1 0 1.06-1.06L20.56 12l2.22-2.22a.75.75 0 1 0-1.06-1.06L19.5 10.94l-2.22-2.22Z" />
+                  </svg>
+                )}
+              </button>
+            )}
+
+            {/* Delete Button (Front) */}
+            {onDelete && (
+              <button
+                type="button"
+                id="btn-delete-flashcard-front"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
+                className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
+                title="Kelimeyi Sil"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                </svg>
+              </button>
+            )}
+          </div>
 
           <div className="text-center relative z-10 w-full max-w-lg">
             {/* Word label */}
@@ -116,23 +169,55 @@ export function FlashCard({ word, isFlipped, onFlip, onRate, onSkip, onUpdateWor
 
         {/* ── Back ── */}
         <div className={`flip-card-back glass flex flex-col p-4 sm:p-6 overflow-y-auto relative transition-opacity duration-200 ${isFlipped ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-          {/* Delete Button (Back - top right) */}
-          {onDelete && (
-            <button
-              type="button"
-              id="btn-delete-flashcard-back"
-              onClick={(e) => {
-                e.stopPropagation()
-                onDelete()
-              }}
-              className="absolute top-3 right-3 sm:top-4 sm:right-4 p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all z-30"
-              title="Kelimeyi Sil"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-              </svg>
-            </button>
-          )}
+          {/* Action buttons (Back - top right): Auto Speak Toggle & Delete */}
+          <div className="absolute top-3 right-3 sm:top-4 sm:right-4 flex items-center gap-1.5 z-30">
+            {onToggleAutoSpeak && (
+              <button
+                type="button"
+                id="btn-toggle-auto-speak-back"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggleAutoSpeak()
+                }}
+                className={`p-2 rounded-xl border transition-all ${
+                  autoSpeak
+                    ? 'text-primary-300 bg-primary-500/15 border-primary-500/30 hover:bg-primary-500/25 shadow-glow-primary'
+                    : 'text-slate-400 bg-base-800/80 border-white/10 hover:text-slate-200 hover:bg-base-700'
+                }`}
+                title={autoSpeak ? 'Otomatik Ses: Açık (Kapatmak için tıkla)' : 'Otomatik Ses: Kapalı (Açmak için tıkla)'}
+              >
+                {autoSpeak ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                    <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06Z" />
+                    <path d="M15.932 7.757a.75.75 0 0 1 1.061 0 4.5 4.5 0 0 1 0 6.364.75.75 0 0 1-1.06-1.06 3 3 0 0 0 0-4.243.75.75 0 0 1 0-1.061Z" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 opacity-70">
+                    <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06Z" />
+                    <path d="M17.28 9.22a.75.75 0 1 0-1.06 1.06L18.44 12l-2.22 2.22a.75.75 0 1 0 1.06 1.06L19.5 13.06l2.22 2.22a.75.75 0 1 0 1.06-1.06L20.56 12l2.22-2.22a.75.75 0 1 0-1.06-1.06L19.5 10.94l-2.22-2.22Z" />
+                  </svg>
+                )}
+              </button>
+            )}
+
+            {/* Delete Button (Back - top right) */}
+            {onDelete && (
+              <button
+                type="button"
+                id="btn-delete-flashcard-back"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
+                className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
+                title="Kelimeyi Sil"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                </svg>
+              </button>
+            )}
+          </div>
           {/* Word header — sticky at the top so English word NEVER disappears when scrolling */}
           <div className="sticky top-0 bg-base-800/95 backdrop-blur-md pb-2.5 pt-1 z-20 border-b border-white/[0.06] -mx-4 sm:-mx-6 px-4 sm:px-6 mb-3 text-center">
             <p className="text-slate-500 text-[10px] font-semibold uppercase tracking-widest mb-1">İngilizce</p>

@@ -33,7 +33,20 @@ export default function ReviewPage() {
   const [sessionInfo, setSessionInfo] = useState(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [autoSpeak, setAutoSpeak] = useState(() => {
+    const saved = localStorage.getItem('review_auto_speak')
+    return saved !== null ? saved === 'true' : true
+  })
   const { toast, showToast, clearToast } = useToast()
+
+  function toggleAutoSpeak() {
+    setAutoSpeak(prev => {
+      const next = !prev
+      localStorage.setItem('review_auto_speak', String(next))
+      showToast(next ? 'Otomatik ses açıldı 🔊' : 'Otomatik ses kapatıldı 🔇', 'info')
+      return next
+    })
+  }
   const streak = useStreak()
 
   const {
@@ -543,6 +556,8 @@ export default function ReviewPage() {
           onSkip={skip}
           onUpdateWord={updateWord}
           onDelete={() => setShowDeleteModal(true)}
+          autoSpeak={autoSpeak}
+          onToggleAutoSpeak={toggleAutoSpeak}
         />
       )}
 
