@@ -21,23 +21,25 @@ function getStorageKey(userId) {
 /**
  * Persists a review log event to localStorage.
  */
-export function recordReviewLog(userId, word, difficulty) {
+export function recordReviewLog(userId, word, difficulty, prevDifficulty = null) {
   if (!word || !word.id) return
   const key = getStorageKey(userId)
   try {
     const raw = localStorage.getItem(key)
     const list = raw ? JSON.parse(raw) : []
+    const oldDiff = prevDifficulty || word.difficulty || 'unrated'
     const entry = {
       id: `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
       word_id: word.id,
       english_word: word.english_word,
       turkish_translation: word.turkish_translation,
-      difficulty, // 'easy' | 'medium' | 'hard'
+      difficulty, // yeni seçilen zorluk
+      previous_difficulty: oldDiff, // önceki zorluk
       reviewed_at: new Date().toISOString(),
     }
-    // Keep newest first, cap at 2000 entries
+    // Keep newest first, cap at 3000 entries
     list.unshift(entry)
-    if (list.length > 2000) list.length = 2000
+    if (list.length > 3000) list.length = 3000
     localStorage.setItem(key, JSON.stringify(list))
 
     // Notify listeners if any

@@ -115,6 +115,7 @@ export function useWords() {
 
   // ── Update difficulty + review metadata after flashcard review (SM-2) ─
   const updateAfterReview = useCallback(async (id, difficulty, word) => {
+    const prevDiff = word?.difficulty || 'unrated'
     const updates = sm2Update(
       difficulty,
       word?.repetitions ?? 0,
@@ -123,7 +124,7 @@ export function useWords() {
       word?.review_count ?? 0,
     )
     if (word) {
-      recordReviewLog(userId, word, difficulty)
+      recordReviewLog(userId, word, difficulty, prevDiff)
     }
     return updateWord(id, updates)
   }, [updateWord, userId])

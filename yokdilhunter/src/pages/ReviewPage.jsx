@@ -6,6 +6,7 @@ import { useReview } from '../hooks/useReview'
 import { useAuthStore } from '../store/authStore'
 import { FlashCard } from '../components/review/FlashCard'
 import { HistoryReviewPicker } from '../components/review/HistoryReviewPicker'
+import { MyReviewsTab } from '../components/review/MyReviewsTab'
 import { Toast, useToast } from '../components/Toast'
 import { useStreak } from '../hooks/useStreak'
 
@@ -267,11 +268,11 @@ export default function ReviewPage() {
             </div>
 
             {/* ── Main Tab Switcher ── */}
-            <div className="flex gap-1.5 p-1 sm:p-1.5 bg-base-800 rounded-2xl border border-white/[0.06]">
+            <div className="flex gap-1 sm:gap-1.5 p-1 sm:p-1.5 bg-base-800 rounded-2xl border border-white/[0.06]">
               <button
                 type="button"
                 onClick={() => setActiveTab('modes')}
-                className={`flex-1 py-2.5 sm:py-3 px-2 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 ${
+                className={`flex-1 py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1 sm:gap-1.5 ${
                   activeTab === 'modes'
                     ? 'bg-primary-500 text-white shadow-glow-primary'
                     : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
@@ -284,61 +285,83 @@ export default function ReviewPage() {
                 type="button"
                 id="tab-history-review"
                 onClick={() => setActiveTab('history')}
-                className={`flex-1 py-2.5 sm:py-3 px-2 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1.5 sm:gap-2 ${
+                className={`flex-1 py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1 sm:gap-1.5 ${
                   activeTab === 'history'
                     ? 'bg-primary-500 text-white shadow-glow-primary'
                     : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
                 }`}
               >
                 <span>🗓️</span>
-                <span className="truncate">Geçmiş Gün Tekrarı</span>
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
+                <span className="truncate">Gün Tekrarı</span>
+              </button>
+              <button
+                type="button"
+                id="tab-my-reviews"
+                onClick={() => setActiveTab('my_reviews')}
+                className={`flex-1 py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1 sm:gap-1.5 ${
+                  activeTab === 'my_reviews'
+                    ? 'bg-primary-500 text-white shadow-glow-primary'
+                    : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                }`}
+              >
+                <span>📊</span>
+                <span className="truncate">Tekrarlarım</span>
+                <span className="hidden sm:inline-block px-1.5 py-0.2 rounded-full text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0 font-extrabold">
                   Yeni
                 </span>
               </button>
             </div>
             
-            {/* Category Select & Create */}
-            <div className="bg-base-800 rounded-2xl p-5 border border-white/[0.06] space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                  Hangi listeden çalışmak istiyorsun?
-                </label>
-                <select
-                  value={selectedCategory}
-                  onChange={e => setSelectedCategory(e.target.value)}
-                  className="input-base cursor-pointer appearance-none text-sm w-full"
-                >
-                  <option value="all">Tüm Kelimeler (Hepsi)</option>
-                  <option value="none">Genel (Kategorisiz)</option>
-                  {decks.map(deck => (
-                    <option key={deck.id} value={deck.id}>{deck.name}</option>
-                  ))}
-                </select>
+            {/* Category Select & Create (Gizlenir: Tekrarlarım sekmesinde tüm tekrarlar listelenir) */}
+            {activeTab !== 'my_reviews' && (
+              <div className="bg-base-800 rounded-2xl p-5 border border-white/[0.06] space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                    Hangi listeden çalışmak istiyorsun?
+                  </label>
+                  <select
+                    value={selectedCategory}
+                    onChange={e => setSelectedCategory(e.target.value)}
+                    className="input-base cursor-pointer appearance-none text-sm w-full"
+                  >
+                    <option value="all">Tüm Kelimeler (Hepsi)</option>
+                    <option value="none">Genel (Kategorisiz)</option>
+                    {decks.map(deck => (
+                      <option key={deck.id} value={deck.id}>{deck.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="h-px bg-white/[0.06]" />
+
+                <form onSubmit={handleCreateDeck} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newDeckName}
+                    onChange={e => setNewDeckName(e.target.value)}
+                    placeholder="Yeni liste adı (örn: YDS)"
+                    className="input-base text-sm flex-1"
+                  />
+                  <button
+                    type="submit"
+                    disabled={creatingDeck || !newDeckName.trim()}
+                    className="btn-ghost shrink-0 px-4 text-sm"
+                  >
+                    {creatingDeck ? '...' : '+ Oluştur'}
+                  </button>
+                </form>
               </div>
+            )}
 
-              <div className="h-px bg-white/[0.06]" />
-
-              <form onSubmit={handleCreateDeck} className="flex gap-2">
-                <input
-                  type="text"
-                  value={newDeckName}
-                  onChange={e => setNewDeckName(e.target.value)}
-                  placeholder="Yeni liste adı (örn: YDS)"
-                  className="input-base text-sm flex-1"
-                />
-                <button
-                  type="submit"
-                  disabled={creatingDeck || !newDeckName.trim()}
-                  className="btn-ghost shrink-0 px-4 text-sm"
-                >
-                  {creatingDeck ? '...' : '+ Oluştur'}
-                </button>
-              </form>
-            </div>
-
-            {/* TAB CONTENT: History vs Standard Modes */}
-            {activeTab === 'history' ? (
+            {/* TAB CONTENT: My Reviews vs History vs Standard Modes */}
+            {activeTab === 'my_reviews' ? (
+              <MyReviewsTab
+                words={words}
+                userId={user?.id}
+                onUpdateWord={updateWord}
+                showToast={showToast}
+              />
+            ) : activeTab === 'history' ? (
               <HistoryReviewPicker
                 words={words}
                 userId={user?.id}

@@ -79,6 +79,7 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
 
   async function handleQuickRate(newDiff) {
     try {
+      const prevDiff = word.difficulty || 'unrated'
       const nowIso = new Date().toISOString()
       const updates = { difficulty: newDiff, last_reviewed_at: nowIso }
       if (newDiff === 'mastered') {
@@ -88,7 +89,7 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
         updates.interval_days = 365
       }
       await onUpdate(word.id, updates)
-      recordReviewLog(word.user_id || null, word, newDiff)
+      recordReviewLog(word.user_id || null, word, newDiff, prevDiff)
     } catch (e) {
       console.error(e)
     }
