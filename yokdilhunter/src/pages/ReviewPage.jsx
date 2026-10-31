@@ -360,6 +360,7 @@ export default function ReviewPage() {
                 userId={user?.id}
                 onUpdateWord={updateWord}
                 showToast={showToast}
+                onStartReviewSession={handleStartHistorySession}
               />
             ) : activeTab === 'history' ? (
               <HistoryReviewPicker

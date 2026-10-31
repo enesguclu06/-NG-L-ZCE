@@ -22,9 +22,16 @@ function formatDateDisplay(isoStr) {
   })
 }
 
-export function MyReviewsTab({ words = [], userId, onUpdateWord, showToast }) {
+export function MyReviewsTab({
+  words = [],
+  userId,
+  onUpdateWord,
+  showToast,
+  onStartReviewSession,
+}) {
   const [search, setSearch] = useState('')
   const [filterDiff, setFilterDiff] = useState('all') // 'all' | difficulty
+  const [dateRange, setDateRange] = useState('all') // 'all' | 'today' | 'yesterday' | 'last7days' | 'prevWeek'
   const [sortOrder, setSortOrder] = useState('latest') // 'latest' | 'count_desc' | 'alphabetical'
   const [updatingId, setUpdatingId] = useState(null)
 
@@ -128,11 +135,47 @@ export function MyReviewsTab({ words = [], userId, onUpdateWord, showToast }) {
     return items
   }, [logs, words, wordMap])
 
+  // Helper date checker
+  function matchesDateRange(isoStr, range) {
+    if (range === 'all') return true
+    if (!isoStr) return false
+    const d = new Date(isoStr)
+    if (isNaN(d.getTime())) return false
+
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const itemTime = d.getTime()
+
+    if (range === 'today') {
+      return itemTime >= todayStart
+    }
+    if (range === 'yesterday') {
+      const yStart = todayStart - 24 * 60 * 60 * 1000
+      return itemTime >= yStart && itemTime < todayStart
+    }
+    if (range === 'last7days') {
+      const start7 = todayStart - 6 * 24 * 60 * 60 * 1000
+      return itemTime >= start7
+    }
+    if (range === 'prevWeek') {
+      const end7 = todayStart - 7 * 24 * 60 * 60 * 1000
+      const start14 = todayStart - 14 * 24 * 60 * 60 * 1000
+      return itemTime >= start14 && itemTime <= end7
+    }
+    return true
+  }
+
   // 4. Filtering & Searching
   const filteredItems = useMemo(() => {
     return reviewStats.filter(item => {
+      // Date range filter
+      if (!matchesDateRange(item.last_reviewed_at, dateRange)) {
+        return false
+      }
       // Diff filter
-      if (filterDiff !== 'all' && item.current_difficulty !== filterDiff) {
+      if (filterDiff === 'hard_medium') {
+        if (item.current_difficulty !== 'hard' && item.current_difficulty !== 'medium') return false
+      } else if (filterDiff !== 'all' && item.current_difficulty !== filterDiff) {
         return false
       }
       // Search filter
@@ -144,7 +187,7 @@ export function MyReviewsTab({ words = [], userId, onUpdateWord, showToast }) {
       }
       return true
     })
-  }, [reviewStats, filterDiff, search])
+  }, [reviewStats, filterDiff, dateRange, search])
 
   // 5. Sorting
   const sortedItems = useMemo(() => {
@@ -158,6 +201,29 @@ export function MyReviewsTab({ words = [], userId, onUpdateWord, showToast }) {
     }
     return list
   }, [filteredItems, sortOrder])
+
+  // Launch flashcard session with current filtered list
+  function handleLaunchFilteredReview() {
+    if (!onStartReviewSession || sortedItems.length === 0) return
+    const targetWords = sortedItems.map(i => i.word)
+    
+    let dateLabel = 'Tüm Zamanlar'
+    if (dateRange === 'today') dateLabel = 'Bugün Tekrar Edilenler'
+    else if (dateRange === 'yesterday') dateLabel = 'Dün Tekrar Edilenler'
+    else if (dateRange === 'last7days') dateLabel = 'Son 7 Gün'
+    else if (dateRange === 'prevWeek') dateLabel = 'Önceki Hafta'
+
+    let diffLabel = 'Tüm Zorluklar'
+    if (filterDiff === 'hard_medium') diffLabel = 'Zor + Orta'
+    else if (filterDiff !== 'all') {
+      diffLabel = DIFFICULTY_MAP[filterDiff]?.label || filterDiff
+    }
+
+    onStartReviewSession(targetWords, {
+      title: `Tekrarın Tekrarı: ${dateLabel} (${diffLabel})`,
+      mode: 'custom_history',
+    })
+  }
 
   // Quick difficulty change directly from MyReviewsTab
   async function handleChangeDifficulty(item, newDiff) {
@@ -218,8 +284,8 @@ export function MyReviewsTab({ words = [], userId, onUpdateWord, showToast }) {
         </div>
       </div>
 
-      {/* ── Controls: Search, Difficulty Filter & Sort ── */}
-      <div className="bg-base-800 rounded-2xl p-4 border border-white/[0.06] space-y-3">
+      {/* ── Controls: Search, Date Range, Difficulty Filter & Sort ── */}
+      <div className="bg-base-800 rounded-2xl p-4 sm:p-5 border border-white/[0.06] space-y-4">
         {/* Search Input */}
         <div className="relative">
           <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
@@ -240,54 +306,124 @@ export function MyReviewsTab({ words = [], userId, onUpdateWord, showToast }) {
           )}
         </div>
 
-        {/* Filters and Sorting */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-          {/* Difficulty pills */}
-          <div className="flex flex-wrap items-center gap-1.5">
+        {/* 1. Date Range Filter */}
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+            📅 Zaman Aralığı:
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { key: 'all', label: 'Tüm Zamanlar' },
+              { key: 'today', label: '⚡ Bugün' },
+              { key: 'yesterday', label: '⏪ Dün' },
+              { key: 'last7days', label: 'Son 7 Gün' },
+              { key: 'prevWeek', label: 'Önceki Hafta' },
+            ].map(d => (
+              <button
+                key={d.key}
+                type="button"
+                onClick={() => setDateRange(d.key)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  dateRange === d.key
+                    ? 'bg-primary-500 text-white shadow-glow-primary'
+                    : 'bg-base-900/70 text-slate-400 hover:text-white border border-white/5'
+                }`}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 2. Difficulty Filter & Presets */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              🎯 Zorluk Filtresi:
+            </label>
+            {/* Quick button for Zor + Orta */}
             <button
-              onClick={() => setFilterDiff('all')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                filterDiff === 'all'
-                  ? 'bg-primary-500 text-white shadow-glow-primary'
-                  : 'bg-base-900/60 text-slate-400 hover:text-white border border-white/5'
+              type="button"
+              onClick={() => setFilterDiff(prev => prev === 'hard_medium' ? 'all' : 'hard_medium')}
+              className={`text-xs px-2.5 py-0.5 rounded-lg border font-bold transition-all ${
+                filterDiff === 'hard_medium'
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : 'bg-base-900 text-slate-400 border-white/10 hover:text-white'
               }`}
             >
-              Tümü ({reviewStats.length})
+              🔴🟡 Sadece Zor + Orta ({reviewStats.filter(i => i.current_difficulty === 'hard' || i.current_difficulty === 'medium').length})
             </button>
-            {['hard', 'medium', 'easy', 'mastered'].map(dKey => {
-              const cfg = DIFFICULTY_MAP[dKey]
-              const count = reviewStats.filter(i => i.current_difficulty === dKey).length
-              return (
-                <button
-                  key={dKey}
-                  onClick={() => setFilterDiff(dKey)}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                    filterDiff === dKey
-                      ? 'bg-white/20 text-white border border-white/30'
-                      : 'bg-base-900/60 text-slate-400 hover:text-white border border-white/5'
-                  }`}
-                >
-                  <span>{cfg.dot}</span>
-                  <span>{cfg.label}</span>
-                  <span className="opacity-60 text-[10px]">({count})</span>
-                </button>
-              )
-            })}
           </div>
 
-          {/* Sort Selector */}
-          <div className="flex items-center gap-1.5 text-xs text-slate-400">
-            <span>Sırala:</span>
-            <select
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value)}
-              className="bg-base-900 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 border border-white/10 focus:outline-none focus:border-primary-500"
-            >
-              <option value="latest">En Son Tekrar Edilen</option>
-              <option value="count_desc">En Çok Tekrar Edilen</option>
-              <option value="alphabetical">Alfabetik (A-Z)</option>
-            </select>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setFilterDiff('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  filterDiff === 'all'
+                    ? 'bg-white/20 text-white border border-white/30'
+                    : 'bg-base-900/60 text-slate-400 hover:text-white border border-white/5'
+                }`}
+              >
+                Hepsi
+              </button>
+              {['hard', 'medium', 'easy', 'mastered'].map(dKey => {
+                const cfg = DIFFICULTY_MAP[dKey]
+                const count = reviewStats.filter(i => i.current_difficulty === dKey).length
+                return (
+                  <button
+                    key={dKey}
+                    type="button"
+                    onClick={() => setFilterDiff(dKey)}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                      filterDiff === dKey
+                        ? 'bg-white/20 text-white border border-white/30'
+                        : 'bg-base-900/60 text-slate-400 hover:text-white border border-white/5'
+                    }`}
+                  >
+                    <span>{cfg.dot}</span>
+                    <span>{cfg.label}</span>
+                    <span className="opacity-60 text-[10px]">({count})</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Sort Selector */}
+            <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <span>Sırala:</span>
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value)}
+                className="bg-base-900 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 border border-white/10 focus:outline-none focus:border-primary-500"
+              >
+                <option value="latest">En Son Tekrar Edilen</option>
+                <option value="count_desc">En Çok Tekrar Edilen</option>
+                <option value="alphabetical">Alfabetik (A-Z)</option>
+              </select>
+            </div>
           </div>
+        </div>
+
+        {/* ── 🚀 Action Banner: TEKRARIN TEKRARINI BAŞLAT ── */}
+        <div className="pt-2 border-t border-white/[0.06]">
+          <button
+            type="button"
+            onClick={handleLaunchFilteredReview}
+            disabled={sortedItems.length === 0}
+            className="btn-primary w-full py-3.5 text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-glow-primary disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          >
+            <span>🚀</span>
+            <span>
+              {sortedItems.length > 0
+                ? `Bu Kelimeleri Flashcard ile Tekrar Et (${sortedItems.length} kelime)`
+                : 'Seçili Kriterde Kelime Bulunamadı'}
+            </span>
+          </button>
+          <p className="text-[11px] text-slate-400 text-center mt-1.5">
+            💡 Seçtiğin filtredeki kelimelerle flashcard oturumu açılır, bittiğinde tebrikler ekranı gelir.
+          </p>
         </div>
       </div>
 
@@ -297,8 +433,8 @@ export function MyReviewsTab({ words = [], userId, onUpdateWord, showToast }) {
           <span className="text-4xl">📚</span>
           <h4 className="text-base font-bold text-white mt-3">Kayıt Bulunamadı</h4>
           <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-            {search || filterDiff !== 'all'
-              ? 'Seçtiğiniz filtrelere uygun tekrar kaydı bulunamadı.'
+            {search || filterDiff !== 'all' || dateRange !== 'all'
+              ? 'Seçtiğiniz zaman ve zorluk filtrelerine uygun tekrar kaydı bulunamadı. Filtreleri genişleterek deneyebilirsiniz.'
               : 'Henüz flashcard ile tekrar yapmadınız. "Akıllı Modlar"dan bir oturum başlatıp kelimeleri çalıştığınızda tüm geçmişiniz burada listelenecek.'}
           </p>
         </div>
@@ -306,13 +442,12 @@ export function MyReviewsTab({ words = [], userId, onUpdateWord, showToast }) {
         <div className="space-y-2.5">
           <div className="flex items-center justify-between text-xs text-slate-400 px-1">
             <span>{sortedItems.length} kelime listeleniyor</span>
-            <span>Sağdaki butonlarla anında zorluk değiştirebilirsin</span>
+            <span className="hidden sm:inline">Sağdaki butonlarla zorluk seviyesini anında güncelleyebilirsin</span>
           </div>
 
           {sortedItems.map((item) => {
             const prevCfg = DIFFICULTY_MAP[item.previous_difficulty] || DIFFICULTY_MAP.unrated
             const currCfg = DIFFICULTY_MAP[item.current_difficulty] || DIFFICULTY_MAP.unrated
-            const isChanged = item.previous_difficulty !== item.current_difficulty && item.previous_difficulty !== 'unrated'
 
             return (
               <div
