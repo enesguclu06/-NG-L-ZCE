@@ -7,6 +7,8 @@ import { useAuthStore } from '../store/authStore'
 import { FlashCard } from '../components/review/FlashCard'
 import { HistoryReviewPicker } from '../components/review/HistoryReviewPicker'
 import { MyReviewsTab } from '../components/review/MyReviewsTab'
+import { CompletedSessionsView } from '../components/review/CompletedSessionsView'
+import { saveCompletedSession } from '../lib/reviewSessions'
 import { Toast, useToast } from '../components/Toast'
 import { useStreak } from '../hooks/useStreak'
 
@@ -53,10 +55,27 @@ export default function ReviewPage() {
   const {
     queue, currentIndex, currentWord,
     isFlipped, isComplete, isStarted,
-    sessionResults, startSession, exitSession,
+    sessionResults, sessionWordsHistory, startSession, exitSession,
     flip, rateDifficulty, skip, removeCurrentWord,
     restartSession, total, progress,
   } = useReview(words, selectedMode, selectedCategory, updateAfterReview)
+
+  // Oturum tamamlandığında Supabase veritabanına ve yerel geçmişe kaydet
+  useEffect(() => {
+    if (isComplete && isStarted) {
+      const totalReviewed = Object.values(sessionResults).reduce((a, b) => a + b, 0)
+      if (totalReviewed > 0) {
+        saveCompletedSession({
+          userId: user?.id,
+          title: sessionInfo?.title || 'Tekrar Oturumu',
+          mode: sessionInfo?.mode || selectedMode,
+          words: sessionWordsHistory,
+          results: sessionResults,
+          total: totalReviewed,
+        }).catch(err => console.warn('Session auto-save err:', err))
+      }
+    }
+  }, [isComplete, isStarted])
 
   useEffect(() => {
     fetchWords()
@@ -272,7 +291,7 @@ export default function ReviewPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab('modes')}
-                className={`flex-1 py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1 sm:gap-1.5 ${
+                className={`flex-1 py-2 sm:py-2.5 px-1 sm:px-2 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1 sm:gap-1.5 ${
                   activeTab === 'modes'
                     ? 'bg-primary-500 text-white shadow-glow-primary'
                     : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
@@ -285,7 +304,7 @@ export default function ReviewPage() {
                 type="button"
                 id="tab-history-review"
                 onClick={() => setActiveTab('history')}
-                className={`flex-1 py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1 sm:gap-1.5 ${
+                className={`flex-1 py-2 sm:py-2.5 px-1 sm:px-2 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1 sm:gap-1.5 ${
                   activeTab === 'history'
                     ? 'bg-primary-500 text-white shadow-glow-primary'
                     : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
@@ -296,24 +315,37 @@ export default function ReviewPage() {
               </button>
               <button
                 type="button"
+                id="tab-sessions"
+                onClick={() => setActiveTab('sessions')}
+                className={`flex-1 py-2 sm:py-2.5 px-1 sm:px-2 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1 sm:gap-1.5 ${
+                  activeTab === 'sessions'
+                    ? 'bg-primary-500 text-white shadow-glow-primary'
+                    : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                }`}
+              >
+                <span>🗂️</span>
+                <span className="truncate">Oturumlarım</span>
+                <span className="hidden sm:inline-block px-1.5 py-0.2 rounded-full text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0 font-extrabold">
+                  Yeni
+                </span>
+              </button>
+              <button
+                type="button"
                 id="tab-my-reviews"
                 onClick={() => setActiveTab('my_reviews')}
-                className={`flex-1 py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1 sm:gap-1.5 ${
+                className={`flex-1 py-2 sm:py-2.5 px-1 sm:px-2 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1 sm:gap-1.5 ${
                   activeTab === 'my_reviews'
                     ? 'bg-primary-500 text-white shadow-glow-primary'
                     : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
                 }`}
               >
                 <span>📊</span>
-                <span className="truncate">Tekrarlarım</span>
-                <span className="hidden sm:inline-block px-1.5 py-0.2 rounded-full text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0 font-extrabold">
-                  Yeni
-                </span>
+                <span className="truncate">Kelimelerim</span>
               </button>
             </div>
             
-            {/* Category Select & Create (Gizlenir: Tekrarlarım sekmesinde tüm tekrarlar listelenir) */}
-            {activeTab !== 'my_reviews' && (
+            {/* Category Select & Create (Gizlenir: Oturumlarım ve Kelimelerim sekmesinde tüm kelimeler listelenir) */}
+            {activeTab !== 'my_reviews' && activeTab !== 'sessions' && (
               <div className="bg-base-800 rounded-2xl p-5 border border-white/[0.06] space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
@@ -353,8 +385,16 @@ export default function ReviewPage() {
               </div>
             )}
 
-            {/* TAB CONTENT: My Reviews vs History vs Standard Modes */}
-            {activeTab === 'my_reviews' ? (
+            {/* TAB CONTENT: Sessions vs Words vs History vs Standard Modes */}
+            {activeTab === 'sessions' ? (
+              <CompletedSessionsView
+                userId={user?.id}
+                liveWords={words}
+                onStartSession={handleStartHistorySession}
+                onUpdateWord={updateWord}
+                showToast={showToast}
+              />
+            ) : activeTab === 'my_reviews' ? (
               <MyReviewsTab
                 words={words}
                 userId={user?.id}

@@ -123,4 +123,34 @@ $$;
 
 grant execute on function delete_expired_push_subscriptions to anon, authenticated, service_role;
 
+-- ── Review Sessions Table (Tamamlanan Oturumlar) ──────────────
+create table if not exists public.review_sessions (
+  id              uuid        primary key default gen_random_uuid(),
+  user_id         uuid        not null references auth.users(id) on delete cascade,
+  title           text        not null,
+  mode            text        not null default 'default',
+  total_reviewed  integer     not null default 0,
+  results         jsonb       not null default '{"hard": 0, "medium": 0, "easy": 0, "mastered": 0}'::jsonb,
+  words           jsonb       not null default '[]'::jsonb,
+  created_at      timestamptz not null default now()
+);
+
+create index if not exists review_sessions_user_id_idx on public.review_sessions(user_id, created_at desc);
+
+alter table public.review_sessions enable row level security;
+
+create policy "Users can view their own review sessions"
+  on public.review_sessions for select
+  using (auth.uid() = user_id);
+
+create policy "Users can insert their own review sessions"
+  on public.review_sessions for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can delete their own review sessions"
+  on public.review_sessions for delete
+  using (auth.uid() = user_id);
+
+grant all on table public.review_sessions to postgres, service_role, authenticated, anon;
+
 

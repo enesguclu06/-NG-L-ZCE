@@ -18,6 +18,7 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isFlipped, setIsFlipped] = useState(false)
   const [sessionResults, setSessionResults] = useState({ easy: 0, medium: 0, hard: 0, mastered: 0 })
+  const [sessionWordsHistory, setSessionWordsHistory] = useState([])
   const [isComplete, setIsComplete] = useState(false)
   const [isStarted, setIsStarted] = useState(false)
   const lastCustomWordsRef = useRef(null)
@@ -65,6 +66,7 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
     setCurrentIndex(0)
     setIsFlipped(false)
     setSessionResults({ easy: 0, medium: 0, hard: 0, mastered: 0 })
+    setSessionWordsHistory([])
     setIsComplete(false)
     setIsStarted(true)
   }, [allWords, mode, category])
@@ -73,6 +75,7 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
     setIsStarted(false)
     setIsComplete(false)
     setQueue([])
+    setSessionWordsHistory([])
     setCurrentIndex(0)
     setIsFlipped(false)
   }, [])
@@ -87,8 +90,20 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
   const rateDifficulty = useCallback(async (difficulty) => {
     if (!currentWord) return
 
+    const prevDiff = currentWord.difficulty || 'unrated'
+
     // Pass full word object so SM-2 can use accumulated state
     await updateAfterReview(currentWord.id, difficulty, currentWord)
+
+    // Append word transition to session record
+    setSessionWordsHistory(prev => [
+      ...prev,
+      {
+        ...currentWord,
+        previous_difficulty: prevDiff,
+        new_difficulty: difficulty,
+      }
+    ])
 
     // Update session results
     setSessionResults(prev => ({
@@ -146,6 +161,7 @@ export function useReview(allWords, mode = 'default', category = 'all', updateAf
     isComplete,
     isStarted,
     sessionResults,
+    sessionWordsHistory,
     startSession,
     exitSession,
     flip,

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { playAudio } from '../../lib/audio'
-import { recordReviewLog } from '../../lib/reviewHistory'
+import { recordReviewLog, matchesDatePreset } from '../../lib/reviewHistory'
 
 const DIFFICULTY_MAP = {
   unrated:  { label: 'Yeni',        cls: 'badge-unrated',  dot: '⚪' },
@@ -135,34 +135,11 @@ export function MyReviewsTab({
     return items
   }, [logs, words, wordMap])
 
-  // Helper date checker
+  // Helper date checker — uses matchesDatePreset from reviewHistory
   function matchesDateRange(isoStr, range) {
     if (range === 'all') return true
     if (!isoStr) return false
-    const d = new Date(isoStr)
-    if (isNaN(d.getTime())) return false
-
-    const now = new Date()
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-    const itemTime = d.getTime()
-
-    if (range === 'today') {
-      return itemTime >= todayStart
-    }
-    if (range === 'yesterday') {
-      const yStart = todayStart - 24 * 60 * 60 * 1000
-      return itemTime >= yStart && itemTime < todayStart
-    }
-    if (range === 'last7days') {
-      const start7 = todayStart - 6 * 24 * 60 * 60 * 1000
-      return itemTime >= start7
-    }
-    if (range === 'prevWeek') {
-      const end7 = todayStart - 7 * 24 * 60 * 60 * 1000
-      const start14 = todayStart - 14 * 24 * 60 * 60 * 1000
-      return itemTime >= start14 && itemTime <= end7
-    }
-    return true
+    return matchesDatePreset(isoStr, range)
   }
 
   // 4. Filtering & Searching
