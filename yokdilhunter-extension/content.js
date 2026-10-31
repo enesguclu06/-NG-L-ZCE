@@ -933,6 +933,23 @@ function preWarmUpcomingCues(currentTime) {
 }
 
 // Binds video playback clock and inspects textTracks for native Turkish or source cues
+let lastPreWarmedCueText = '';
+function preWarmCurrentOnScreenCue() {
+  if (activeSubtitleMode !== 'hover' && activeSubtitleMode !== 'dual') return;
+  try {
+    const cue = findActiveSubtitleCue();
+    if (cue && cue.text) {
+      const text = cue.text.replace(/\s+/g, ' ').trim();
+      if (text && text !== lastPreWarmedCueText) {
+        lastPreWarmedCueText = text;
+        if (!sentenceCache.has(text)) {
+          getSentenceTranslation(text);
+        }
+      }
+    }
+  } catch {}
+}
+
 function syncAndPrewarmVideos() {
   const videos = document.querySelectorAll('video');
   for (const v of videos) {
@@ -942,12 +959,18 @@ function syncAndPrewarmVideos() {
         if (activeSubtitleMode === 'dual') {
           scanAndShowDualSubtitle();
           preWarmUpcomingCues(v.currentTime);
+        } else if (activeSubtitleMode === 'hover') {
+          preWarmUpcomingCues(v.currentTime);
+          preWarmCurrentOnScreenCue();
         }
       });
       v.addEventListener('seeked', () => {
         if (activeSubtitleMode === 'dual') {
           preWarmUpcomingCues(v.currentTime);
           scanAndShowDualSubtitle();
+        } else if (activeSubtitleMode === 'hover') {
+          preWarmUpcomingCues(v.currentTime);
+          preWarmCurrentOnScreenCue();
         }
       });
     }
@@ -1037,7 +1060,18 @@ function showSubBar(sentence, anchorRect, isDual = false) {
 
   currentSubSentence = sentence;
 
-  // 1. Instant Memory Cache (0 ms - previously pre-warmed)
+  // 1. Check official/native Turkish subtitle track (0ms instant studio translation)
+  const nativeTr = getNativeTurkishTrackCue();
+  if (nativeTr) {
+    sentenceCache.set(sentence, nativeTr);
+    textEl.textContent = nativeTr;
+    textEl.classList.remove('ydh-sub-loading');
+    updateSubBarPosition(subBar, anchorRect, container);
+    subBar.classList.add('ydh-sub-visible');
+    return;
+  }
+
+  // 2. Instant Memory Cache (0 ms - previously pre-warmed)
   if (sentenceCache.has(sentence)) {
     textEl.textContent = sentenceCache.get(sentence);
     textEl.classList.remove('ydh-sub-loading');
@@ -1046,7 +1080,13 @@ function showSubBar(sentence, anchorRect, isDual = false) {
     return;
   }
 
-  // 2. Direct sentence translation (Guaranteed 100% exact sentence-to-sentence translation)
+  // 3. Immediate zero-latency visual feedback so the bar appears instantly under cursor
+  textEl.textContent = '...';
+  textEl.classList.add('ydh-sub-loading');
+  updateSubBarPosition(subBar, anchorRect, container);
+  subBar.classList.add('ydh-sub-visible');
+
+  // 4. Direct sentence translation
   getSentenceTranslation(sentence).then((tr) => {
     if (currentSubSentence === sentence && subBar) {
       textEl.textContent = tr || sentence;
@@ -1077,6 +1117,8 @@ function setupSubtitleObserver() {
     subObserver = new MutationObserver(() => {
       if (activeSubtitleMode === 'dual') {
         scanAndShowDualSubtitle();
+      } else if (activeSubtitleMode === 'hover') {
+        preWarmCurrentOnScreenCue();
       }
     });
 
@@ -1110,6 +1152,14 @@ function handleSubtitleModeChange() {
       scanAndShowDualSubtitle();
       syncAndPrewarmVideos();
     }, 40);
+  } else if (activeSubtitleMode === 'hover') {
+    setupSubtitleObserver();
+    syncAndPrewarmVideos();
+    preWarmCurrentOnScreenCue();
+    dualSubTimer = setInterval(() => {
+      syncAndPrewarmVideos();
+      preWarmCurrentOnScreenCue();
+    }, 200);
   } else {
     teardownSubtitleObserver();
     hideSubBar();
