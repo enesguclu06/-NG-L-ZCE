@@ -128,51 +128,51 @@ export async function fetchCompletedSessions(userId, liveWords = []) {
 
   const merged = Array.from(map.values())
 
-  // If no sessions yet (or for existing users who reviewed before session tracking),
-  // synthesize a session from words that have last_reviewed_at so the user doesn't see an empty screen!
-  if (merged.length === 0 && liveWords && liveWords.length > 0) {
-    const reviewedWords = liveWords.filter(w => w.last_reviewed_at)
-    if (reviewedWords.length > 0) {
-      // Group words by last_reviewed_at day
-      const dayGroups = new Map()
-      for (const rw of reviewedWords) {
-        const dStr = rw.last_reviewed_at.split('T')[0]
-        if (!dayGroups.has(dStr)) dayGroups.set(dStr, [])
-        dayGroups.get(dStr).push(rw)
-      }
-
-      for (const [dayStr, gWords] of dayGroups.entries()) {
-        const results = { hard: 0, medium: 0, easy: 0, mastered: 0 }
-        for (const w of gWords) {
-          const diff = w.difficulty || 'medium'
-          if (results[diff] !== undefined) results[diff]++
-        }
-        const d = new Date(dayStr)
-        const dateFormatted = d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })
-
-        merged.push({
-          id: `synth_${dayStr}`,
-          user_id: userId,
-          title: `${dateFormatted} Oturumu`,
-          mode: 'history_sync',
-          total_reviewed: gWords.length,
-          results,
-          words: gWords.map(w => ({
-            id: w.id,
-            word_id: w.id,
-            english_word: w.english_word,
-            turkish_translation: w.turkish_translation,
-            previous_difficulty: 'unrated',
-            new_difficulty: w.difficulty || 'medium',
-          })),
-          created_at: gWords[0].last_reviewed_at,
-          is_synthesized: true,
-        })
-      }
+  // Deduplicate: same title and within 10 seconds of each other
+  const deduplicated = []
+  for (const s of merged) {
+    const isDup = deduplicated.some(existing => {
+      if (existing.id === s.id) return true
+      const diffTime = Math.abs(new Date(existing.created_at).getTime() - new Date(s.created_at).getTime())
+      return existing.title === s.title && existing.total_reviewed === s.total_reviewed && diffTime < 10000
+    })
+    if (!isDup) {
+      deduplicated.push(s)
     }
   }
 
   // Sort newest first
-  merged.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-  return merged
+  deduplicated.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  return deduplicated
 }
+
+/**
+ * Deletes a session both from local storage and Supabase
+ */
+export async function deleteCompletedSession(userId, sessionId) {
+  if (!sessionId) return
+
+  // 1. Delete from local storage
+  try {
+    const key = getLocalKey(userId)
+    const list = getLocalSessions(userId)
+    const updated = list.filter(s => s.id !== sessionId)
+    localStorage.setItem(key, JSON.stringify(updated))
+  } catch (e) {
+    console.warn('Could not delete session from localStorage:', e)
+  }
+
+  // 2. Delete from Supabase if not synthesized
+  if (userId && !sessionId.startsWith('synth_')) {
+    try {
+      await supabase
+        .from('review_sessions')
+        .delete()
+        .eq('id', sessionId)
+        .eq('user_id', userId)
+    } catch (e) {
+      console.warn('Could not delete session from Supabase:', e)
+    }
+  }
+}
+

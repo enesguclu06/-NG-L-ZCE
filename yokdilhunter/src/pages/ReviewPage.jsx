@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { isDueToday } from '../lib/spaced'
 import { useWords } from '../hooks/useWords'
 import { useDecks } from '../hooks/useDecks'
@@ -36,6 +36,7 @@ export default function ReviewPage() {
   const [sessionInfo, setSessionInfo] = useState(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const savedSessionIdRef = useRef(null)
   const [autoSpeak, setAutoSpeak] = useState(() => {
     const saved = localStorage.getItem('review_auto_speak')
     return saved !== null ? saved === 'true' : true
@@ -60,11 +61,12 @@ export default function ReviewPage() {
     restartSession, total, progress,
   } = useReview(words, selectedMode, selectedCategory, updateAfterReview)
 
-  // Oturum tamamlandığında Supabase veritabanına ve yerel geçmişe kaydet
+  // Oturum tamamlandığında Supabase veritabanına ve yerel geçmişe kaydet (1 kez çalışır)
   useEffect(() => {
     if (isComplete && isStarted) {
       const totalReviewed = Object.values(sessionResults).reduce((a, b) => a + b, 0)
-      if (totalReviewed > 0) {
+      if (totalReviewed > 0 && !savedSessionIdRef.current) {
+        savedSessionIdRef.current = `${Date.now()}_${totalReviewed}`
         saveCompletedSession({
           userId: user?.id,
           title: sessionInfo?.title || 'Tekrar Oturumu',
@@ -74,8 +76,10 @@ export default function ReviewPage() {
           total: totalReviewed,
         }).catch(err => console.warn('Session auto-save err:', err))
       }
+    } else if (!isComplete) {
+      savedSessionIdRef.current = null
     }
-  }, [isComplete, isStarted])
+  }, [isComplete, isStarted, sessionResults, sessionWordsHistory, user?.id, sessionInfo, selectedMode])
 
   useEffect(() => {
     fetchWords()
