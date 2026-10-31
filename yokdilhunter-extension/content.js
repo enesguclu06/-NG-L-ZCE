@@ -773,10 +773,75 @@ function getSubBar() {
   return bar;
 }
 
+// ── Hover Auto-Pause & Resume Engine ─────────────────────────────────────────
+let autoPausedByHover = false;
+let pausedVideoRef = null;
+
+function pauseVideoForSubtitleHover(x, y) {
+  if (activeSubtitleMode !== 'hover') return;
+  if (autoPausedByHover) return;
+
+  const video = findAssociatedVideo(x, y) || document.querySelector('video');
+  if (video && !video.paused) {
+    autoPausedByHover = true;
+    pausedVideoRef = video;
+    try { video.pause(); } catch {}
+
+    const onManualPlay = () => {
+      autoPausedByHover = false;
+      pausedVideoRef = null;
+    };
+    video.addEventListener('play', onManualPlay, { once: true });
+
+    // YouTube specific
+    try {
+      const mp = document.getElementById('movie_player');
+      if (mp && typeof mp.pauseVideo === 'function') {
+        mp.pauseVideo();
+      }
+    } catch {}
+  }
+}
+
+function resumeVideoAfterSubtitleHover() {
+  if (!autoPausedByHover) return;
+
+  // Don't resume if word translation card is open
+  if (tooltip && tooltip.classList.contains('ydh-visible')) {
+    autoPausedByHover = false;
+    pausedVideoRef = null;
+    return;
+  }
+
+  const v = pausedVideoRef;
+  autoPausedByHover = false;
+  pausedVideoRef = null;
+
+  if (v) {
+    try {
+      const p = v.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {});
+      }
+    } catch {}
+  }
+
+  // YouTube specific
+  try {
+    const mp = document.getElementById('movie_player');
+    if (mp && typeof mp.playVideo === 'function') {
+      mp.playVideo();
+    }
+  } catch {}
+}
+
 function hideSubBar() {
   if (subBar) {
     subBar.classList.remove('ydh-sub-visible');
     currentSubSentence = '';
+  }
+  if (activeSubtitleMode === 'hover') {
+    resumeVideoAfterSubtitleHover();
   }
 }
 
@@ -1037,6 +1102,7 @@ function handleSubtitleModeChange() {
   }
 
   if (activeSubtitleMode === 'dual') {
+    resumeVideoAfterSubtitleHover();
     setupSubtitleObserver();
     syncAndPrewarmVideos();
     scanAndShowDualSubtitle();
@@ -1089,6 +1155,25 @@ window.addEventListener('mousemove', (e) => {
     return;
   }
 
+  // 0. Check if hovering over our active subtitle translation bar
+  if (subBar && subBar.classList.contains('ydh-sub-visible')) {
+    const bRect = subBar.getBoundingClientRect();
+    const isOverBar = (
+      e.clientX >= bRect.left - 20 &&
+      e.clientX <= bRect.right + 20 &&
+      e.clientY >= bRect.top - 20 &&
+      e.clientY <= bRect.bottom + 20
+    );
+    if (isOverBar) {
+      if (hoverHideTimeout) {
+        clearTimeout(hoverHideTimeout);
+        hoverHideTimeout = null;
+      }
+      pauseVideoForSubtitleHover(e.clientX, e.clientY);
+      return;
+    }
+  }
+
   // 1. Check if hovering over the active subtitle block
   const activeSub = findActiveSubtitleCue();
   if (activeSub) {
@@ -1106,6 +1191,7 @@ window.addEventListener('mousemove', (e) => {
         hoverHideTimeout = null;
       }
       showSubBar(activeSub.text, activeSub.rect, false);
+      pauseVideoForSubtitleHover(e.clientX, e.clientY);
       return;
     }
   }
@@ -1126,6 +1212,7 @@ window.addEventListener('mousemove', (e) => {
       height: 30
     };
     showSubBar(subData.sentence, anchorRect, false);
+    pauseVideoForSubtitleHover(e.clientX, e.clientY);
     return;
   }
 
@@ -1137,6 +1224,12 @@ window.addEventListener('mousemove', (e) => {
     }, 350);
   }
 }, { passive: true });
+
+document.addEventListener('mouseleave', () => {
+  if (activeSubtitleMode === 'hover' && subBar && subBar.classList.contains('ydh-sub-visible')) {
+    hideSubBar();
+  }
+});
 
 // Fullscreen changes
 document.addEventListener('fullscreenchange', () => {
@@ -1152,6 +1245,8 @@ document.addEventListener('webkitfullscreenchange', () => {
 
 // ── Word Card Trigger Helper (Pauses Video & Opens Save Popup) ───────────────
 function triggerWordCard(clientX, clientY) {
+  autoPausedByHover = false;
+  pausedVideoRef = null;
   const data = extractWordAtPoint(clientX, clientY);
   if (!data?.word) return false;
 
@@ -1622,6 +1717,8 @@ document.addEventListener('scroll', hideTooltip, { passive: true });
 
 // ── Show tooltip ───────────────────────────────────────────────────────────
 function showTooltip(word, rect, contextSentence = null) {
+  autoPausedByHover = false;
+  pausedVideoRef = null;
   hideTooltip();
   hideSubBar();
   injectStyles();
