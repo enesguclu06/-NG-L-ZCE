@@ -362,6 +362,10 @@ export function CompletedSessionsView({
                                 <div className="flex items-baseline gap-2 flex-wrap">
                                   <span className="font-bold text-white text-sm">{w.english_word}</span>
                                   <span className="text-slate-400 text-xs truncate">— {w.turkish_translation}</span>
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-500/15 text-primary-300 font-bold text-[10px] border border-primary-500/25 shrink-0">
+                                    <span>🔄</span>
+                                    <span>{liveWord.review_count || 1} tekrar</span>
+                                  </span>
                                 </div>
                                 <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1">
                                   <span className="opacity-70">Oturum Değişimi:</span>
