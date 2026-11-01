@@ -1734,24 +1734,27 @@ function jumpToPreviousSubtitle() {
   const cues = getAllSubtitleCues(video);
 
   if (cues && cues.length > 0) {
-    // If currently more than 1.2s into current cue, replay from its beginning
-    const currentCue = cues.find(c => c.start <= (now + 0.25) && now <= (c.end + 0.25));
-    if (currentCue && (now - currentCue.start) > 1.2) {
-      seekVideoToTime(video, currentCue.start + 0.05);
-      showNavToast(`⏮ ${currentCue.text}`);
+    // If currently inside cue i, ALWAYS jump directly to cue i - 1! (Never act like S repeat)
+    const currentCueIndex = cues.findIndex(c => (c.start - 0.2) <= now && now <= (c.end + 0.2));
+
+    if (currentCueIndex > 0) {
+      const prevCue = cues[currentCueIndex - 1];
+      seekVideoToTime(video, Math.max(0, prevCue.start - 0.1));
+      showNavToast(`⏮ ${prevCue.text}`);
+      return;
+    } else if (currentCueIndex === 0) {
+      // Very first cue of the video
+      seekVideoToTime(video, Math.max(0, cues[0].start - 0.1));
+      showNavToast(`⏮ ${cues[0].text}`);
       return;
     }
 
-    // Otherwise find the immediate preceding cue before now
-    const prevCues = cues.filter(c => c.start < (now - 0.25));
+    // If between cues (silence/gap), find the immediate last cue before now
+    const prevCues = cues.filter(c => c.start < (now - 0.2));
     if (prevCues.length > 0) {
       const prevCue = prevCues[prevCues.length - 1];
-      seekVideoToTime(video, prevCue.start + 0.05);
+      seekVideoToTime(video, Math.max(0, prevCue.start - 0.1));
       showNavToast(`⏮ ${prevCue.text}`);
-      return;
-    } else if (currentCue) {
-      seekVideoToTime(video, currentCue.start + 0.05);
-      showNavToast(`⏮ ${currentCue.text}`);
       return;
     }
   }
@@ -1772,10 +1775,19 @@ function jumpToNextSubtitle() {
   const cues = getAllSubtitleCues(video);
 
   if (cues && cues.length > 0) {
-    // Find the immediate next dialogue cue chronologically
-    const nextCue = cues.find(c => c.start > (now + 0.25));
+    // If currently inside cue i, jump directly to cue i + 1!
+    const currentCueIndex = cues.findIndex(c => (c.start - 0.2) <= now && now <= (c.end + 0.2));
+    if (currentCueIndex !== -1 && currentCueIndex < cues.length - 1) {
+      const nextCue = cues[currentCueIndex + 1];
+      seekVideoToTime(video, Math.max(0, nextCue.start - 0.1));
+      showNavToast(`⏭ ${nextCue.text}`);
+      return;
+    }
+
+    // Otherwise find the first cue that starts after now
+    const nextCue = cues.find(c => c.start > (now + 0.2));
     if (nextCue) {
-      seekVideoToTime(video, nextCue.start + 0.05);
+      seekVideoToTime(video, Math.max(0, nextCue.start - 0.1));
       showNavToast(`⏭ ${nextCue.text}`);
       return;
     } else {
@@ -1797,24 +1809,14 @@ function repeatCurrentSubtitle() {
 
   checkVideoEpisodeChange(video);
   const now = video.currentTime;
-
-  // 1. Direct active DOM subtitle check (100% accurate zero-latency repeat!)
-  const activeDomCue = findActiveSubtitleCue();
-  if (activeDomCue && activeDomCue.text) {
-    trackActiveCue(activeDomCue.text, now);
-    if (currentActiveCue && currentActiveCue.start <= (now + 0.5)) {
-      seekVideoToTime(video, currentActiveCue.start + 0.05);
-      showNavToast(`🔁 ${activeDomCue.text}`);
-      return;
-    }
-  }
-
-  // 2. Search full cues list
   const cues = getAllSubtitleCues(video);
+
+  // 1. Search official cue list FIRST (millisecond-accurate audio sync timestamps!)
   if (cues && cues.length > 0) {
-    const currentCue = cues.find(c => c.start <= (now + 0.3) && now <= (c.end + 0.3));
+    // Current cue on screen: seek to its exact start (-100ms pre-roll so first consonant is crisp!)
+    const currentCue = cues.find(c => (c.start - 0.2) <= now && now <= (c.end + 0.3));
     if (currentCue) {
-      seekVideoToTime(video, currentCue.start + 0.05);
+      seekVideoToTime(video, Math.max(0, currentCue.start - 0.1));
       showNavToast(`🔁 ${currentCue.text}`);
       return;
     }
@@ -1823,20 +1825,31 @@ function repeatCurrentSubtitle() {
     const recentCues = cues.filter(c => c.start <= now && (now - c.end) < 3.5);
     if (recentCues.length > 0) {
       const target = recentCues[recentCues.length - 1];
-      seekVideoToTime(video, target.start + 0.05);
+      seekVideoToTime(video, Math.max(0, target.start - 0.1));
       showNavToast(`🔁 ${target.text}`);
+      return;
+    }
+  }
+
+  // 2. Active DOM subtitle fallback (if preloaded cues weren't loaded yet)
+  const activeDomCue = findActiveSubtitleCue();
+  if (activeDomCue && activeDomCue.text) {
+    trackActiveCue(activeDomCue.text, now);
+    if (currentActiveCue && currentActiveCue.start <= (now + 0.5)) {
+      seekVideoToTime(video, Math.max(0, currentActiveCue.start - 0.1));
+      showNavToast(`🔁 ${activeDomCue.text}`);
       return;
     }
   }
 
   // 3. Fallback: recently tracked active or finished cue
   if (currentActiveCue && currentActiveCue.start < now) {
-    seekVideoToTime(video, currentActiveCue.start + 0.05);
+    seekVideoToTime(video, Math.max(0, currentActiveCue.start - 0.1));
     showNavToast(`🔁 ${currentActiveCue.text}`);
     return;
   }
   if (lastFinishedCue && (now - lastFinishedCue.end) < 4.0) {
-    seekVideoToTime(video, lastFinishedCue.start + 0.05);
+    seekVideoToTime(video, Math.max(0, lastFinishedCue.start - 0.1));
     showNavToast(`🔁 ${lastFinishedCue.text}`);
     return;
   }
