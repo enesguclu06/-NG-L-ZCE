@@ -241,45 +241,6 @@
     }
   }
 
-  function inspectManifestJson(obj) {
-    if (!obj || typeof obj !== 'object') return;
-    const candidates = [];
-    function walk(o, depth) {
-      if (!o || depth > 5) return;
-      if (Array.isArray(o)) {
-        for (const item of o) {
-          if (item && typeof item === 'object') {
-            const u = item.url || item.subtitleUrl || item.timedTextUrl;
-            const l = item.languageCode || item.lang || item.displayName || item.language;
-            if (u && typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://'))) {
-              candidates.push({ url: u, lang: String(l || '') });
-            }
-          }
-          walk(item, depth + 1);
-        }
-      } else if (typeof o === 'object') {
-        for (const k of Object.keys(o)) {
-          walk(o[k], depth + 1);
-        }
-      }
-    }
-    try { walk(obj, 0); } catch {}
-
-    for (const c of candidates) {
-      const l = c.lang.toLowerCase();
-      const isTr = l.includes('tr') || l.includes('turk') || l.includes('türk');
-      const isEn = l.includes('en') || l.includes('eng');
-      if (isTr || isEn) {
-        fetch(c.url)
-          .then(r => r.text())
-          .then(t => {
-            if (t) processSubtitlePayload(c.url, t);
-          })
-          .catch(() => {});
-      }
-    }
-  }
-
   function isSubtitleUrl(url) {
     if (!url || typeof url !== 'string') return false;
     const u = url.toLowerCase();
@@ -300,7 +261,7 @@
       u.includes('tracktype=subtitles') ||
       u.includes('format=ttml') ||
       u.includes('format=vtt') ||
-      (u.includes('amazon.com') && (u.includes('subtitle') || u.includes('caption') || u.includes('subs') || u.includes('timedtext') || u.includes('dfxp'))) ||
+      (u.includes('amazon.com') && (u.includes('subtitle') || u.includes('caption') || u.includes('timedtext') || u.includes('dfxp'))) ||
       (u.includes('pv-cdn') && (u.includes('subtitle') || u.includes('caption') || u.includes('timedtext') || u.includes('dfxp') || u.includes('.vtt'))) ||
       (u.includes('aiv-cdn') && (u.includes('subtitle') || u.includes('caption') || u.includes('timedtext') || u.includes('dfxp') || u.includes('.vtt'))) ||
       (u.includes('atv-ext') && (u.includes('subtitle') || u.includes('caption') || u.includes('timedtext') || u.includes('dfxp') || u.includes('.vtt'))) ||
@@ -314,17 +275,6 @@
     );
   }
 
-  function isManifestUrl(url) {
-    if (!url || typeof url !== 'string') return false;
-    const u = url.toLowerCase();
-    return (
-      u.includes('getplaybackresources') ||
-      u.includes('playbackresources') ||
-      u.includes('/playback/manifest') ||
-      u.includes('licenseandplaybackmetadata')
-    );
-  }
-
   // 1. Hook window.fetch
   if (typeof window.fetch === 'function') {
     const origFetch = window.fetch;
@@ -334,10 +284,9 @@
         const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
         if (isSubtitleUrl(url)) {
           const clone = res.clone();
-          clone.text().then(text => processSubtitlePayload(url, text)).catch(() => {});
-        } else if (isManifestUrl(url)) {
-          const clone = res.clone();
-          clone.json().then(obj => inspectManifestJson(obj)).catch(() => {});
+          clone.text().then(text => {
+            if (text) processSubtitlePayload(url, text);
+          }).catch(() => {});
         }
       } catch {}
       return res;
@@ -357,24 +306,17 @@
     XMLHttpRequest.prototype.send = function() {
       this.addEventListener('load', function() {
         try {
-          if (this._ydhUrl) {
-            if (isSubtitleUrl(this._ydhUrl)) {
-              let content = '';
-              if (typeof this.responseText === 'string') {
-                content = this.responseText;
-              } else if (this.response instanceof ArrayBuffer) {
-                content = new TextDecoder('utf-8').decode(this.response);
-              } else if (typeof this.response === 'string') {
-                content = this.response;
-              }
-              if (content) {
-                processSubtitlePayload(this._ydhUrl, content);
-              }
-            } else if (isManifestUrl(this._ydhUrl)) {
-              try {
-                const parsed = JSON.parse(this.responseText);
-                inspectManifestJson(parsed);
-              } catch {}
+          if (this._ydhUrl && isSubtitleUrl(this._ydhUrl)) {
+            let content = '';
+            if (typeof this.responseText === 'string') {
+              content = this.responseText;
+            } else if (this.response && this.response instanceof ArrayBuffer) {
+              content = new TextDecoder('utf-8').decode(this.response);
+            } else if (typeof this.response === 'string') {
+              content = this.response;
+            }
+            if (content) {
+              processSubtitlePayload(this._ydhUrl, content);
             }
           }
         } catch {}
