@@ -41,11 +41,13 @@ function getAppRoot() {
 function isPlayerControlOrUI(el) {
   if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
 
-  // 1. Never match our own tooltip, toast, or subtitle bar
+  // 1. Never match our own tooltip, toast, subtitle bar, or nav dock
   if (el.id === 'ydh-tooltip' || el.closest?.('#ydh-tooltip') ||
       el.id === 'ydh-notification-toast' ||
       el.id === 'ydh-sub-translation-bar' ||
-      el.closest?.('#ydh-sub-translation-bar')) {
+      el.closest?.('#ydh-sub-translation-bar') ||
+      el.id === 'ydh-nav-controls' ||
+      el.closest?.('#ydh-nav-controls')) {
     return false;
   }
 
@@ -1246,11 +1248,13 @@ document.addEventListener('fullscreenchange', () => {
   hideTooltip();
   hideSubBar();
   handleSubtitleModeChange();
+  ensureNavControls();
 });
 document.addEventListener('webkitfullscreenchange', () => {
   hideTooltip();
   hideSubBar();
   handleSubtitleModeChange();
+  ensureNavControls();
 });
 
 // ── Word Card Trigger Helper (Pauses Video & Opens Save Popup) ───────────────
@@ -1558,30 +1562,22 @@ function jumpToPreviousSubtitle() {
   const cues = getAllSubtitleCues(video);
 
   if (cues && cues.length > 0) {
-    const currentCueIndex = cues.findIndex(c => c.start <= (now + 0.35) && now <= (c.end + 0.35));
+    const currentCueIndex = cues.findIndex(c => c.start <= (now + 0.25) && now <= (c.end + 0.25));
 
-    if (currentCueIndex !== -1) {
-      const currentCue = cues[currentCueIndex];
-      // If we are more than 0.75 seconds into the current cue, replay from its beginning!
-      if (now - currentCue.start > 0.75) {
-        seekVideoToTime(video, currentCue.start);
-        showNavToast(`⏮ ${currentCue.text}`);
-        return;
-      }
-      // Otherwise jump to the previous cue
-      if (currentCueIndex > 0) {
-        const prevCue = cues[currentCueIndex - 1];
-        seekVideoToTime(video, prevCue.start);
-        showNavToast(`⏮ ${prevCue.text}`);
-        return;
-      } else {
-        seekVideoToTime(video, currentCue.start);
-        showNavToast(`⏮ ${currentCue.text}`);
-        return;
-      }
+    if (currentCueIndex > 0) {
+      // Jump strictly to the previous subtitle
+      const target = cues[currentCueIndex - 1];
+      seekVideoToTime(video, target.start);
+      showNavToast(`⏮ ${target.text}`);
+      return;
+    } else if (currentCueIndex === 0) {
+      // Already on first subtitle, seek to its start
+      seekVideoToTime(video, cues[0].start);
+      showNavToast(`⏮ ${cues[0].text}`);
+      return;
     } else {
-      // Find the last cue before current time
-      const prevCues = cues.filter(c => c.start < now - 0.2);
+      // Between subtitles: jump to the one before current time
+      const prevCues = cues.filter(c => c.end <= now);
       if (prevCues.length > 0) {
         const target = prevCues[prevCues.length - 1];
         seekVideoToTime(video, target.start);
@@ -1605,7 +1601,7 @@ function jumpToNextSubtitle() {
   const cues = getAllSubtitleCues(video);
 
   if (cues && cues.length > 0) {
-    const nextCue = cues.find(c => c.start > (now + 0.25));
+    const nextCue = cues.find(c => c.start > (now + 0.2));
     if (nextCue) {
       seekVideoToTime(video, nextCue.start);
       showNavToast(`⏭ ${nextCue.text}`);
@@ -1627,12 +1623,24 @@ function repeatCurrentSubtitle() {
   const cues = getAllSubtitleCues(video);
 
   if (cues && cues.length > 0) {
-    const currentCue = cues.find(c => c.start <= (now + 0.35) && now <= (c.end + 0.35));
+    // 1. Is there an active cue right now?
+    const currentCue = cues.find(c => c.start <= (now + 0.25) && now <= (c.end + 0.4));
     if (currentCue) {
       seekVideoToTime(video, currentCue.start);
       showNavToast(`🔁 ${currentCue.text}`);
       return;
     }
+
+    // 2. Or did a cue just end within the last 2.5 seconds? Replay that one!
+    const recentCues = cues.filter(c => c.start <= now && (now - c.end) < 2.5);
+    if (recentCues.length > 0) {
+      const target = recentCues[recentCues.length - 1];
+      seekVideoToTime(video, target.start);
+      showNavToast(`🔁 ${target.text}`);
+      return;
+    }
+
+    // 3. Fallback: most recent cue
     const prevCues = cues.filter(c => c.start <= now);
     if (prevCues.length > 0) {
       const target = prevCues[prevCues.length - 1];
@@ -1644,6 +1652,63 @@ function repeatCurrentSubtitle() {
 
   seekVideoToTime(video, Math.max(0, now - 3));
   showNavToast(`🔁 -3s`);
+}
+
+// ── Floating On-Screen Navigation Controls (Left Screen Pill Dock) ───────────
+function ensureNavControls() {
+  const container = getAppRoot();
+  let controls = document.getElementById('ydh-nav-controls');
+  if (!controls) {
+    controls = document.createElement('div');
+    controls.id = 'ydh-nav-controls';
+    controls.innerHTML = `
+      <button type="button" class="ydh-nav-btn ydh-nav-prev" title="Önceki Altyazı (A)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="11 19 2 12 11 5 11 19"></polygon>
+          <polygon points="22 19 13 12 22 5 22 19"></polygon>
+        </svg>
+      </button>
+      <button type="button" class="ydh-nav-btn ydh-nav-repeat" title="Altyazıyı Tekrar Et (S)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 4v6h6"></path>
+          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+        </svg>
+      </button>
+      <button type="button" class="ydh-nav-btn ydh-nav-next" title="Sonraki Altyazı (D)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 19 22 12 13 5 13 19"></polygon>
+          <polygon points="2 19 11 12 2 5 2 19"></polygon>
+        </svg>
+      </button>
+    `;
+
+    controls.querySelector('.ydh-nav-prev').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleNavKey('a');
+    });
+    controls.querySelector('.ydh-nav-repeat').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleNavKey('s');
+    });
+    controls.querySelector('.ydh-nav-next').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleNavKey('d');
+    });
+
+    controls.addEventListener('mousedown', (e) => e.stopPropagation());
+    controls.addEventListener('pointerdown', (e) => e.stopPropagation());
+    controls.addEventListener('click', (e) => e.stopPropagation());
+
+    container.appendChild(controls);
+  } else if (controls.parentElement !== container) {
+    container.appendChild(controls);
+  }
+
+  const hasVideo = document.querySelector('video') || document.querySelector('.html5-video-player');
+  controls.style.display = hasVideo ? 'flex' : 'none';
 }
 
 // Global Keyboard Listener for A / D / S subtitle navigation (fallback / direct)
@@ -2157,6 +2222,65 @@ function injectStyles() {
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
+
+    /* Floating Subtitle Navigation Dock (Left Screen) */
+    #ydh-nav-controls {
+      position: fixed;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 6px;
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 30px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+      z-index: 2147483645;
+      opacity: 0.38;
+      transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      user-select: none;
+      -webkit-user-select: none;
+      pointer-events: auto;
+    }
+    #ydh-nav-controls:hover {
+      opacity: 1 !important;
+      transform: translateY(-50%) scale(1.06);
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7), 0 0 16px rgba(99, 102, 241, 0.3);
+    }
+    .ydh-nav-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border: none;
+      outline: none;
+      background: rgba(255, 255, 255, 0.08);
+      color: #f1f5f9;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.12s ease, color 0.15s ease;
+      padding: 0;
+      margin: 0;
+    }
+    .ydh-nav-btn:hover {
+      background: rgba(99, 102, 241, 0.9);
+      color: #ffffff;
+      transform: scale(1.12);
+      box-shadow: 0 0 14px rgba(99, 102, 241, 0.6);
+    }
+    .ydh-nav-btn:active {
+      transform: scale(0.92);
+    }
+    .ydh-nav-btn svg {
+      width: 17px;
+      height: 17px;
+      pointer-events: none;
+    }
   `;
 
   (document.head || document.documentElement).appendChild(style);
@@ -2167,5 +2291,7 @@ function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Initialize styles on load
+// Initialize styles and navigation controls on load
 injectStyles();
+ensureNavControls();
+setInterval(ensureNavControls, 2000);
