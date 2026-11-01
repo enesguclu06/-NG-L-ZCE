@@ -126,44 +126,29 @@
 
   function detectLanguage(url, text) {
     const urlLower = (url || '').toLowerCase();
-    // URL-based Turkish detection
+    // Strict URL-based Turkish detection (must be explicit language parameter or specific filename)
     if (
       urlLower.includes('lang=tr') ||
       urlLower.includes('language=tr') ||
-      urlLower.includes('/tr/') ||
-      urlLower.includes('turkish') ||
-      urlLower.includes('tur.vtt') ||
-      urlLower.includes('tr-tr') ||
-      urlLower.includes('tr_tr') ||
-      urlLower.includes('_tr.') ||
-      urlLower.includes('-tr.')
+      urlLower.includes('language=turkish') ||
+      urlLower.includes('srclang=tr') ||
+      urlLower.includes('.tur.vtt') ||
+      urlLower.includes('_tur.vtt') ||
+      urlLower.includes('-tur.vtt') ||
+      urlLower.includes('_tr.vtt') ||
+      urlLower.includes('-tr.vtt')
     ) {
       return 'tr';
     }
-    // Content-based language detection (TTML/VTT headers)
+    // Content-based language detection (TTML/VTT root header only)
     if (text && typeof text === 'string') {
-      const head = text.slice(0, 800).toLowerCase();
-      // Match xml:lang="tr", xml:lang="tr-TR", xml:lang="tr-tr", lang="tr", lang="tr-TR"
-      if (/xml:lang=["']tr(-\w+)?["']/i.test(text.slice(0, 800))) return 'tr';
-      if (/\blang=["']tr(-\w+)?["']/i.test(text.slice(0, 800))) return 'tr';
-      if (head.includes('xml:lang="en') || head.includes('lang="en')) return 'en';
+      const head = text.slice(0, 500).toLowerCase();
+      if (head.includes('xml:lang="tr"') || head.includes("xml:lang='tr'") || head.includes('xml:lang="tr-tr"') || head.includes("xml:lang='tr-tr'")) {
+        return 'tr';
+      }
     }
-    // URL-based English detection
-    if (
-      urlLower.includes('lang=en') ||
-      urlLower.includes('language=en') ||
-      urlLower.includes('/en/') ||
-      urlLower.includes('english') ||
-      urlLower.includes('eng.vtt') ||
-      urlLower.includes('en-us') ||
-      urlLower.includes('en-gb') ||
-      urlLower.includes('en_us') ||
-      urlLower.includes('_en.') ||
-      urlLower.includes('-en.')
-    ) {
-      return 'en';
-    }
-    return 'unknown';
+    // Default to source English track so cues are always available for pre-warming and A/D navigation
+    return 'en';
   }
 
   function processSubtitlePayload(url, rawContent) {

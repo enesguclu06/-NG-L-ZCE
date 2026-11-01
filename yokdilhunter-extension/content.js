@@ -1013,62 +1013,6 @@ function syncAndPrewarmVideos() {
   }
 }
 
-// (getNativeTurkishTrackCue removed — native track timing drifts cause wrong translations)
-
-// Get Turkish cue matching a given video time (±tolerance seconds)
-// Never caches by English sentence — always fresh lookup from platform's own track
-function getTurkishCueAtVideoTime(videoTime, toleranceSecs = 1.5) {
-  // 1. Official intercepted Turkish cues (Prime Video, Netflix, Disney+ stream)
-  try {
-    if (officialTurkishCues && officialTurkishCues.length > 0) {
-      // Find cue strictly active at this video time
-      let match = officialTurkishCues.find(c =>
-        c.start <= videoTime && videoTime <= c.end
-      );
-      // Widen search with tolerance if strict match fails
-      if (!match) {
-        match = officialTurkishCues.find(c =>
-          c.start <= (videoTime + toleranceSecs) && (videoTime - toleranceSecs) <= c.end
-        );
-      }
-      if (match && match.text) return match.text;
-    }
-  } catch {}
-
-  // 2. Native HTML5 text track cues (YouTube, browser-native subtitles)
-  try {
-    const videos = document.querySelectorAll('video');
-    for (const v of videos) {
-      if (!v.textTracks) continue;
-      for (let i = 0; i < v.textTracks.length; i++) {
-        const track = v.textTracks[i];
-        const lang = (track.language || '').toLowerCase();
-        const label = (track.label || '').toLowerCase();
-        const isTurkish = lang.startsWith('tr') || label.includes('türk') || label.includes('turk');
-        if (!isTurkish) continue;
-
-        // activeCues is always in sync with the video clock — most accurate
-        if (track.activeCues && track.activeCues.length > 0) {
-          const raw = (track.activeCues[0].text || '').replace(/<[^>]+>/g, '').trim();
-          if (raw.length >= 2) return raw;
-        }
-
-        // Fallback: scan all cues by time
-        if (track.cues && track.cues.length > 0) {
-          for (let c = 0; c < track.cues.length; c++) {
-            const cue = track.cues[c];
-            if (cue.startTime <= (videoTime + toleranceSecs) && (videoTime - toleranceSecs) <= cue.endTime) {
-              const raw = (cue.text || '').replace(/<[^>]+>/g, '').trim();
-              if (raw.length >= 2) return raw;
-            }
-          }
-        }
-      }
-    }
-  } catch {}
-  return null;
-}
-
 function showSubBar(sentence, anchorRect, isDual = false) {
   if (!sentence || activeSubtitleMode === 'off') {
     hideSubBar();
@@ -1087,22 +1031,7 @@ function showSubBar(sentence, anchorRect, isDual = false) {
 
   currentSubSentence = sentence;
 
-  // 1. Platform's own Turkish subtitle (Prime Video / Netflix / Disney+ / YouTube official)
-  //    Look up by video time — NEVER write to sentenceCache to avoid wrong mappings
-  const video = document.querySelector('video');
-  const videoTime = video ? video.currentTime : null;
-  if (videoTime !== null) {
-    const platformTr = getTurkishCueAtVideoTime(videoTime);
-    if (platformTr) {
-      textEl.textContent = platformTr;
-      textEl.classList.remove('ydh-sub-loading');
-      updateSubBarPosition(subBar, anchorRect, container);
-      subBar.classList.add('ydh-sub-visible');
-      return;
-    }
-  }
-
-  // 2. Instant Memory Cache (0 ms - previously pre-warmed by Google Translate)
+  // 1. Instant Memory Cache (0 ms - previously pre-warmed)
   if (sentenceCache.has(sentence)) {
     textEl.textContent = sentenceCache.get(sentence);
     textEl.classList.remove('ydh-sub-loading');
@@ -1111,13 +1040,13 @@ function showSubBar(sentence, anchorRect, isDual = false) {
     return;
   }
 
-  // 3. Immediate zero-latency visual feedback so bar appears instantly
+  // 2. Immediate zero-latency visual feedback so bar appears instantly
   textEl.textContent = '...';
   textEl.classList.add('ydh-sub-loading');
   updateSubBarPosition(subBar, anchorRect, container);
   subBar.classList.add('ydh-sub-visible');
 
-  // 4. Translate via Google (fallback when platform has no Turkish track)
+  // 3. Direct sentence translation
   getSentenceTranslation(sentence).then((tr) => {
     if (currentSubSentence === sentence && subBar) {
       textEl.textContent = tr || sentence;
@@ -1497,11 +1426,7 @@ function getAllSubtitleCues(video) {
   if (preloadedSourceCues && preloadedSourceCues.length > 0) {
     return preloadedSourceCues;
   }
-  // 2. Official Turkish cues if available
-  if (officialTurkishCues && officialTurkishCues.length > 0) {
-    return officialTurkishCues;
-  }
-  // 3. HTML5 textTracks on the video
+  // 2. HTML5 textTracks on the video
   if (video && video.textTracks) {
     for (let i = 0; i < video.textTracks.length; i++) {
       const track = video.textTracks[i];
