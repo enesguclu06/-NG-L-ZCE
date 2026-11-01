@@ -10,13 +10,36 @@
   function parseTimeSeconds(timeStr) {
     if (!timeStr) return 0;
     const str = String(timeStr).trim();
+    if (str.endsWith('ms')) {
+      const num = parseFloat(str);
+      return isNaN(num) ? 0 : num / 1000;
+    }
     if (str.endsWith('s')) {
       const num = parseFloat(str);
       return isNaN(num) ? 0 : num;
     }
-    // Format: HH:MM:SS.mmm or MM:SS.mmm or HH:MM:SS:FF
-    const parts = str.replace(',', '.').split(':');
-    if (parts.length === 3) {
+    if (str.endsWith('m')) {
+      const num = parseFloat(str);
+      return isNaN(num) ? 0 : num * 60;
+    }
+    if (str.endsWith('h')) {
+      const num = parseFloat(str);
+      return isNaN(num) ? 0 : num * 3600;
+    }
+    if (str.endsWith('t')) {
+      const num = parseFloat(str);
+      return isNaN(num) ? 0 : num / 10000000;
+    }
+
+    // Format: HH:MM:SS:FF or HH:MM:SS;FF or HH:MM:SS.mmm or MM:SS.mmm
+    const parts = str.replace(',', '.').replace(';', ':').split(':');
+    if (parts.length === 4) {
+      const h = parseFloat(parts[0]) || 0;
+      const m = parseFloat(parts[1]) || 0;
+      const s = parseFloat(parts[2]) || 0;
+      const f = parseFloat(parts[3]) || 0;
+      return h * 3600 + m * 60 + s + (f / 25);
+    } else if (parts.length === 3) {
       const h = parseFloat(parts[0]) || 0;
       const m = parseFloat(parts[1]) || 0;
       const s = parseFloat(parts[2]) || 0;
@@ -73,8 +96,8 @@
   function parseTTML(text) {
     const cues = [];
     if (!text || typeof text !== 'string') return cues;
-    // Match <p ... begin="..." end="...">Text</p>
-    const pRegex = /<p\b[^>]*?\bbegin=["']([^"']+)["'][^>]*?(?:\bend=["']([^"']+)["']|\bdur=["']([^"']+)["'])?[^>]*>([\s\S]*?)<\/p>/gi;
+    // Match <p ... begin="..." end="...">Text</p> or <tt:p>
+    const pRegex = /<(?:[a-zA-Z0-9]+:)?p\b[^>]*?\bbegin=["']([^"']+)["'][^>]*?(?:\bend=["']([^"']+)["']|\bdur=["']([^"']+)["'])?[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9]+:)?p>/gi;
     let match;
     while ((match = pRegex.exec(text)) !== null) {
       const beginStr = match[1];
@@ -83,12 +106,31 @@
       const rawText = match[4];
 
       const start = parseTimeSeconds(beginStr);
-      let end = endStr ? parseTimeSeconds(endStr) : (durStr ? start + parseTimeSeconds(durStr) : start + 4);
+      let end = endStr ? parseTimeSeconds(endStr) : (durStr ? start + parseTimeSeconds(durStr) : start + 3.5);
       const cueText = cleanSubtitleText(rawText);
       if (cueText && cueText.length >= 2) {
         cues.push({ start, end, text: cueText });
       }
     }
+
+    // Some TTML files embed timed spans inside paragraphs
+    if (cues.length === 0) {
+      const spanRegex = /<(?:[a-zA-Z0-9]+:)?span\b[^>]*?\bbegin=["']([^"']+)["'][^>]*?(?:\bend=["']([^"']+)["']|\bdur=["']([^"']+)["'])?[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9]+:)?span>/gi;
+      while ((match = spanRegex.exec(text)) !== null) {
+        const beginStr = match[1];
+        const endStr = match[2];
+        const durStr = match[3];
+        const rawText = match[4];
+
+        const start = parseTimeSeconds(beginStr);
+        let end = endStr ? parseTimeSeconds(endStr) : (durStr ? start + parseTimeSeconds(durStr) : start + 3.5);
+        const cueText = cleanSubtitleText(rawText);
+        if (cueText && cueText.length >= 2) {
+          cues.push({ start, end, text: cueText });
+        }
+      }
+    }
+
     return cues;
   }
 
@@ -136,14 +178,23 @@
       urlLower.includes('_tur.vtt') ||
       urlLower.includes('-tur.vtt') ||
       urlLower.includes('_tr.vtt') ||
-      urlLower.includes('-tr.vtt')
+      urlLower.includes('-tr.vtt') ||
+      urlLower.includes('/tr-tr/') ||
+      urlLower.includes('/tur/') ||
+      urlLower.includes('/tr/')
     ) {
       return 'tr';
     }
     // Content-based language detection (TTML/VTT root header only)
     if (text && typeof text === 'string') {
-      const head = text.slice(0, 500).toLowerCase();
-      if (head.includes('xml:lang="tr"') || head.includes("xml:lang='tr'") || head.includes('xml:lang="tr-tr"') || head.includes("xml:lang='tr-tr'")) {
+      const head = text.slice(0, 1000).toLowerCase();
+      if (
+        head.includes('xml:lang="tr') ||
+        head.includes("xml:lang='tr") ||
+        head.includes('lang="tr') ||
+        head.includes("lang='tr") ||
+        head.includes('language: tr')
+      ) {
         return 'tr';
       }
     }
@@ -159,7 +210,7 @@
 
       if (isString && rawContent.includes('WEBVTT')) {
         cues = parseWebVTT(rawContent);
-      } else if (isString && (rawContent.includes('<tt') || rawContent.includes('<p begin='))) {
+      } else if (isString && (rawContent.includes('<tt') || rawContent.includes('<p begin=') || rawContent.includes(':p begin='))) {
         cues = parseTTML(rawContent);
       } else if (isString && rawContent.includes('<transcript>')) {
         cues = parseYouTubeXml(rawContent);
@@ -190,9 +241,52 @@
     }
   }
 
+  function inspectManifestJson(obj) {
+    if (!obj || typeof obj !== 'object') return;
+    const candidates = [];
+    function walk(o, depth) {
+      if (!o || depth > 5) return;
+      if (Array.isArray(o)) {
+        for (const item of o) {
+          if (item && typeof item === 'object') {
+            const u = item.url || item.subtitleUrl || item.timedTextUrl;
+            const l = item.languageCode || item.lang || item.displayName || item.language;
+            if (u && typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://'))) {
+              candidates.push({ url: u, lang: String(l || '') });
+            }
+          }
+          walk(item, depth + 1);
+        }
+      } else if (typeof o === 'object') {
+        for (const k of Object.keys(o)) {
+          walk(o[k], depth + 1);
+        }
+      }
+    }
+    try { walk(obj, 0); } catch {}
+
+    for (const c of candidates) {
+      const l = c.lang.toLowerCase();
+      const isTr = l.includes('tr') || l.includes('turk') || l.includes('türk');
+      const isEn = l.includes('en') || l.includes('eng');
+      if (isTr || isEn) {
+        fetch(c.url)
+          .then(r => r.text())
+          .then(t => {
+            if (t) processSubtitlePayload(c.url, t);
+          })
+          .catch(() => {});
+      }
+    }
+  }
+
   function isSubtitleUrl(url) {
     if (!url || typeof url !== 'string') return false;
     const u = url.toLowerCase();
+    // Exclude video/audio media chunks to save CPU & memory
+    if (u.includes('.mp4') || u.includes('.m4s') || u.includes('.ts') || u.includes('.m4a') || u.includes('.webm')) {
+      return false;
+    }
     return (
       u.includes('.vtt') ||
       u.includes('.ttml') ||
@@ -203,17 +297,31 @@
       u.includes('/captions') ||
       u.includes('/subtitle') ||
       u.includes('/caption') ||
-      u.includes('atv-ext') ||
-      u.includes('pv-cdn') ||
-      u.includes('aiv-cdn') ||
-      u.includes('amazon.com/') && (u.includes('subtitle') || u.includes('caption') || u.includes('subs') || u.includes('timedtext')) ||
-      (u.includes('nflxvideo.net') && (u.includes('?o=') || u.includes('xml'))) ||
+      u.includes('tracktype=subtitles') ||
+      u.includes('format=ttml') ||
+      u.includes('format=vtt') ||
+      (u.includes('amazon.com') && (u.includes('subtitle') || u.includes('caption') || u.includes('subs') || u.includes('timedtext') || u.includes('dfxp'))) ||
+      (u.includes('pv-cdn') && (u.includes('subtitle') || u.includes('caption') || u.includes('timedtext') || u.includes('dfxp') || u.includes('.vtt'))) ||
+      (u.includes('aiv-cdn') && (u.includes('subtitle') || u.includes('caption') || u.includes('timedtext') || u.includes('dfxp') || u.includes('.vtt'))) ||
+      (u.includes('atv-ext') && (u.includes('subtitle') || u.includes('caption') || u.includes('timedtext') || u.includes('dfxp') || u.includes('.vtt'))) ||
+      (u.includes('nflxvideo.net') && (u.includes('?o=') || u.includes('xml') || u.includes('vtt'))) ||
       u.includes('youtube.com/api/timedtext') ||
-      u.includes('googlevideo.com') && u.includes('subtitle') ||
-      u.includes('dplus') && u.includes('subtitle') ||
-      u.includes('disneyplus') && u.includes('subtitle') ||
-      u.includes('hbomax') && u.includes('subtitle') ||
-      u.includes('max.com') && u.includes('subtitle')
+      (u.includes('googlevideo.com') && u.includes('subtitle')) ||
+      (u.includes('dplus') && u.includes('subtitle')) ||
+      (u.includes('disneyplus') && u.includes('subtitle')) ||
+      (u.includes('hbomax') && u.includes('subtitle')) ||
+      (u.includes('max.com') && u.includes('subtitle'))
+    );
+  }
+
+  function isManifestUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    const u = url.toLowerCase();
+    return (
+      u.includes('getplaybackresources') ||
+      u.includes('playbackresources') ||
+      u.includes('/playback/manifest') ||
+      u.includes('licenseandplaybackmetadata')
     );
   }
 
@@ -227,6 +335,9 @@
         if (isSubtitleUrl(url)) {
           const clone = res.clone();
           clone.text().then(text => processSubtitlePayload(url, text)).catch(() => {});
+        } else if (isManifestUrl(url)) {
+          const clone = res.clone();
+          clone.json().then(obj => inspectManifestJson(obj)).catch(() => {});
         }
       } catch {}
       return res;
@@ -246,14 +357,41 @@
     XMLHttpRequest.prototype.send = function() {
       this.addEventListener('load', function() {
         try {
-          if (this._ydhUrl && isSubtitleUrl(this._ydhUrl) && typeof this.responseText === 'string') {
-            processSubtitlePayload(this._ydhUrl, this.responseText);
+          if (this._ydhUrl) {
+            if (isSubtitleUrl(this._ydhUrl)) {
+              let content = '';
+              if (typeof this.responseText === 'string') {
+                content = this.responseText;
+              } else if (this.response instanceof ArrayBuffer) {
+                content = new TextDecoder('utf-8').decode(this.response);
+              } else if (typeof this.response === 'string') {
+                content = this.response;
+              }
+              if (content) {
+                processSubtitlePayload(this._ydhUrl, content);
+              }
+            } else if (isManifestUrl(this._ydhUrl)) {
+              try {
+                const parsed = JSON.parse(this.responseText);
+                inspectManifestJson(parsed);
+              } catch {}
+            }
           }
         } catch {}
       });
       return origSend.apply(this, arguments);
     };
   }
+
+  // Listen for direct cue load requests from content.js
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || !e.data) return;
+    if (e.data.from === 'ydh_content' && e.data.action === 'parse_direct') {
+      if (e.data.url && e.data.content) {
+        processSubtitlePayload(e.data.url, e.data.content);
+      }
+    }
+  });
 
   // 3. Block Prime Video's default 'A' (Audio & Subtitles tray) shortcut in MAIN world
   function isInputActive(target) {
