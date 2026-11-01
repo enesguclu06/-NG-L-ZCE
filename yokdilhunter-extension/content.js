@@ -1013,34 +1013,7 @@ function syncAndPrewarmVideos() {
   }
 }
 
-// Check if player has native or official Turkish subtitle track (0ms instant!)
-function getNativeTurkishTrackCue() {
-  // 1. Check official Turkish cues from intercepted subtitle stream
-  try {
-    const v = document.querySelector('video');
-    const now = v?.currentTime || 0;
-    if (officialTurkishCues && officialTurkishCues.length > 0) {
-      const match = officialTurkishCues.find(c => c.start <= (now + 0.3) && (now - 0.3) <= c.end);
-      if (match && match.text) return match.text;
-    }
-  } catch {}
-
-  // 2. Check native HTML5 text tracks
-  try {
-    const videos = document.querySelectorAll('video');
-    for (const v of videos) {
-      if (!v.textTracks) continue;
-      for (let i = 0; i < v.textTracks.length; i++) {
-        const track = v.textTracks[i];
-        if (track.language && (track.language.toLowerCase().startsWith('tr') || track.label?.toLowerCase().includes('türk')) && track.activeCues && track.activeCues.length > 0) {
-          const raw = (track.activeCues[0].text || '').replace(/<[^>]+>/g, '').trim();
-          if (raw.length >= 2) return raw;
-        }
-      }
-    }
-  } catch {}
-  return null;
-}
+// (getNativeTurkishTrackCue removed — native track timing drifts cause wrong translations)
 
 function showSubBar(sentence, anchorRect, isDual = false) {
   if (!sentence || activeSubtitleMode === 'off') {
@@ -1060,18 +1033,7 @@ function showSubBar(sentence, anchorRect, isDual = false) {
 
   currentSubSentence = sentence;
 
-  // 1. Check official/native Turkish subtitle track (0ms instant studio translation)
-  const nativeTr = getNativeTurkishTrackCue();
-  if (nativeTr) {
-    sentenceCache.set(sentence, nativeTr);
-    textEl.textContent = nativeTr;
-    textEl.classList.remove('ydh-sub-loading');
-    updateSubBarPosition(subBar, anchorRect, container);
-    subBar.classList.add('ydh-sub-visible');
-    return;
-  }
-
-  // 2. Instant Memory Cache (0 ms - previously pre-warmed)
+  // 1. Instant Memory Cache (0 ms - previously pre-warmed)
   if (sentenceCache.has(sentence)) {
     textEl.textContent = sentenceCache.get(sentence);
     textEl.classList.remove('ydh-sub-loading');
@@ -1080,13 +1042,13 @@ function showSubBar(sentence, anchorRect, isDual = false) {
     return;
   }
 
-  // 3. Immediate zero-latency visual feedback so the bar appears instantly under cursor
+  // 2. Immediate zero-latency visual feedback so bar appears instantly
   textEl.textContent = '...';
   textEl.classList.add('ydh-sub-loading');
   updateSubBarPosition(subBar, anchorRect, container);
   subBar.classList.add('ydh-sub-visible');
 
-  // 4. Direct sentence translation
+  // 3. Translate sentence (fetch from API)
   getSentenceTranslation(sentence).then((tr) => {
     if (currentSubSentence === sentence && subBar) {
       textEl.textContent = tr || sentence;
