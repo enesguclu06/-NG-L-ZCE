@@ -307,16 +307,20 @@
       this.addEventListener('load', function() {
         try {
           if (this._ydhUrl && isSubtitleUrl(this._ydhUrl)) {
-            let content = '';
-            if (typeof this.responseText === 'string') {
-              content = this.responseText;
-            } else if (this.response && this.response instanceof ArrayBuffer) {
-              content = new TextDecoder('utf-8').decode(this.response);
-            } else if (typeof this.response === 'string') {
-              content = this.response;
-            }
-            if (content) {
-              processSubtitlePayload(this._ydhUrl, content);
+            const rType = this.responseType;
+            if (!rType || rType === 'text') {
+              if (typeof this.responseText === 'string' && this.responseText) {
+                processSubtitlePayload(this._ydhUrl, this.responseText);
+              }
+            } else if (rType === 'arraybuffer' && this.response) {
+              const text = new TextDecoder('utf-8').decode(this.response);
+              if (text) processSubtitlePayload(this._ydhUrl, text);
+            } else if (rType === 'blob' && this.response instanceof Blob) {
+              this.response.text().then(text => {
+                if (text) processSubtitlePayload(this._ydhUrl, text);
+              }).catch(() => {});
+            } else if (typeof this.response === 'string' && this.response) {
+              processSubtitlePayload(this._ydhUrl, this.response);
             }
           }
         } catch {}

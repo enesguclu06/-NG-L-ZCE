@@ -609,13 +609,11 @@ async function fetchGeminiSentence(word) {
   const prompt = `Write a short, simple, modern English example sentence (maximum 10 to 14 words) clearly using the word "${word}". Keep it natural and very easy to memorize for English learners. Do NOT write long or complex academic sentences. Do NOT use archaic words (like thou, didst, etc.). Return ONLY the sentence itself, without quotation marks, translation, markdown, or extra explanations.`
 
   const models = [
-    'gemini-3.5-flash-lite',
     'gemini-flash-lite-latest',
-    'gemini-3.1-flash-lite',
-    'gemini-3.5-flash',
+    'gemini-flash-latest',
+    'gemini-3.5-flash-lite',
     'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-3.6-flash'
+    'gemini-2.5-flash'
   ]
   for (const model of models) {
     try {
@@ -667,13 +665,11 @@ Format örneği: anlam1, anlam2, anlam3, anlam4
 Asla başlık, selamlama, numara veya İngilizce açıklama yazma.`
 
   const models = [
-    'gemini-3.5-flash-lite',
     'gemini-flash-lite-latest',
-    'gemini-3.1-flash-lite',
-    'gemini-3.5-flash',
+    'gemini-flash-latest',
+    'gemini-3.5-flash-lite',
     'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-3.6-flash'
+    'gemini-2.5-flash'
   ]
   for (const model of models) {
     try {
@@ -716,6 +712,61 @@ Asla başlık, selamlama, numara veya İngilizce açıklama yazma.`
           const result = parts.slice(0, 4).join(', ')
           console.log(`[YDH Extension] Gemini AI translation for "${word}": ${result}`)
           return result
+        }
+      }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+// ── Gemini AI Movie Subtitle / Sentence Translation ─────────────────────────
+export async function fetchGeminiSentenceTranslation(sentence, apiKey = null) {
+  if (!sentence || typeof sentence !== 'string') return null
+  const trimmed = sentence.replace(/\s+/g, ' ').trim()
+  if (trimmed.length < 2) return null
+
+  const key = await getEffectiveGeminiKey(apiKey)
+  if (!key) return null
+
+  const prompt = `Aşağıdaki İngilizce dizi/film repliğini doğal, akıcı ve deyimlerin anlamına uygun Türkçe'ye çevir.
+Argo, kibarlaştırılmış argo (euphemism) veya deyimleri bağlama göre aktar (örneğin "up to my asterisk" gibi kalıpları motamot "yıldız işaretime kadar" diye değil, "boğazıma kadar", "paçalarıma kadar" veya "battım" gibi deyimsel aktar).
+Replik: "${trimmed}"
+SADECE Türkçe çeviriyi yaz. Asla tırnak, başlık veya açıklama ekleme.`
+
+  const models = [
+    'gemini-flash-lite-latest',
+    'gemini-flash-latest',
+    'gemini-3.5-flash-lite',
+    'gemini-3.8-flash',
+    'gemini-2.5-flash'
+  ]
+
+  for (const model of models) {
+    try {
+      const res = await fetchWithTimeout(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+        3000,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 300
+            }
+          })
+        }
+      )
+      if (!res.ok) continue
+      const data = await res.json()
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+      if (text) {
+        let clean = text.replace(/^["'“”«»]+|["'“”«»]+$/g, '').trim()
+        if (clean.length >= 2) {
+          return clean
         }
       }
     } catch {

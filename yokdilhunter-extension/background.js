@@ -1,5 +1,5 @@
 import { getSession, checkDuplicate, saveWord } from './lib/supabase.js';
-import { fetchWordData, fetchTranslation } from './lib/api.js';
+import { fetchWordData, fetchTranslation, fetchGeminiSentenceTranslation } from './lib/api.js';
 
 // ── Service Worker Initialization ─────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
@@ -223,16 +223,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// ── Blazing-Fast Multi-Provider Sentence Translation Engine (~100ms) ────────
+// ── Blazing-Fast Multi-Provider Sentence Translation Engine (Gemini AI + Fallbacks) ──
 async function fetchSentenceTranslation(sentence) {
   if (!sentence || typeof sentence !== 'string') return '';
   const trimmed = sentence.trim();
   if (!trimmed) return '';
 
+  // 1. Try Gemini AI Translation first (for idiomatic, natural movie dialogue subtitles)
+  try {
+    let mode = 'ai';
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      const data = await chrome.storage.local.get(['translation_mode']);
+      if (data?.translation_mode) mode = data.translation_mode;
+    }
+    if (mode !== 'classic') {
+      const aiResult = await fetchGeminiSentenceTranslation(trimmed);
+      if (aiResult && aiResult.length >= 2) {
+        return aiResult;
+      }
+    }
+  } catch (err) {
+    console.warn("Gemini sentence translation error:", err);
+  }
+
   const isEnglish = /^[a-zA-Z0-9\s.,!?'"()\-—:;]+$/.test(trimmed);
   const srcLang = isEnglish ? 'en' : 'auto';
 
-  // 1. clients5 Google API (Fastest: ~100ms, compact payload, edge CDN)
+  // 2. clients5 Google API (Fastest fallback: ~100ms, compact payload, edge CDN)
   try {
     const url = `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${srcLang}&tl=tr&q=${encodeURIComponent(trimmed)}`;
     const res = await fetch(url);

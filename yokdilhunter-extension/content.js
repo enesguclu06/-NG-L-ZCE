@@ -579,7 +579,26 @@ function getSentenceTranslation(sentence) {
   }
 
   const p = (async () => {
-    // 1. Direct fetch inside content script (~60-90ms)
+    // 1. In AI mode: query background service worker (Gemini AI contextual movie dialogue translation)
+    if (activeSaveMode !== 'classic') {
+      try {
+        const aiTrans = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ action: 'translate_sentence', sentence: trimmed }, (response) => {
+            if (chrome.runtime.lastError) {
+              resolve('');
+              return;
+            }
+            resolve((response?.translation || '').trim());
+          });
+        });
+        if (aiTrans && (aiTrans.length >= 2 || trimmed.length <= 2)) {
+          cacheAndPersist(trimmed, aiTrans);
+          return aiTrans;
+        }
+      } catch {}
+    }
+
+    // 2. Direct fast fetch inside content script (~60-90ms Google Translate fallback)
     try {
       const direct = await fastDirectFetch(trimmed);
       if (direct && (direct.length >= 2 || trimmed.length <= 2)) {
@@ -588,7 +607,7 @@ function getSentenceTranslation(sentence) {
       }
     } catch {}
 
-    // 2. Fallback to background service worker via IPC (~120ms)
+    // 3. Fallback to background service worker via IPC (~120ms)
     return new Promise((resolve) => {
       try {
         chrome.runtime.sendMessage({ action: 'translate_sentence', sentence: trimmed }, (response) => {
@@ -897,6 +916,37 @@ function updateSubBarPosition(bar, anchorRect, container) {
   });
 }
 
+// ── Subtitle Cues Deduplication & Multi-line Dialogue Combiner ─────────────
+function cleanAndMergeCues(rawCues) {
+  if (!rawCues || rawCues.length === 0) return [];
+  const sorted = [...rawCues].sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const cue of sorted) {
+    if (!cue || !cue.text) continue;
+    const cleanText = cue.text.replace(/\s+/g, ' ').trim();
+    if (cleanText.length < 2) continue;
+    // Ignore sound-effect-only cues (e.g. [MUSIC], ♪)
+    if (/^(\[[^\]]+\]|\([^)]+\)|[♪\s]+)$/.test(cleanText)) continue;
+    if (merged.length === 0) {
+      merged.push({ start: cue.start, end: cue.end, text: cleanText });
+      continue;
+    }
+    const last = merged[merged.length - 1];
+    // Merge if cues share the exact/nearby start time (multi-line subtitle on Prime Video / Netflix)
+    if (Math.abs(cue.start - last.start) <= 0.35) {
+      if (!last.text.includes(cleanText)) {
+        last.text = `${last.text} ${cleanText}`.trim();
+      }
+      last.end = Math.max(last.end, cue.end);
+    } else if (cleanText === last.text && Math.abs(cue.start - last.end) <= 0.5) {
+      last.end = Math.max(last.end, cue.end);
+    } else {
+      merged.push({ start: cue.start, end: cue.end, text: cleanText });
+    }
+  }
+  return merged;
+}
+
 // ── Lookahead Subtitle Cues & Official Turkish Tracks (0ms Zero-Latency Engine) ──
 let preloadedSourceCues = [];
 let officialTurkishCues = [];
@@ -908,9 +958,9 @@ window.addEventListener('message', (event) => {
   if (event.source !== window || !event.data || event.data.from !== 'ydh_interceptor') return;
   if (event.data.action === 'cues_loaded') {
     if (event.data.lang === 'tr') {
-      officialTurkishCues = event.data.cues || [];
+      officialTurkishCues = cleanAndMergeCues([...officialTurkishCues, ...(event.data.cues || [])]);
     } else {
-      preloadedSourceCues = event.data.cues || [];
+      preloadedSourceCues = cleanAndMergeCues([...preloadedSourceCues, ...(event.data.cues || [])]);
       const v = document.querySelector('video');
       preWarmUpcomingCues(v?.currentTime || 0);
     }
@@ -931,9 +981,15 @@ function preWarmUpcomingCues(currentTime) {
       const cue = preloadedSourceCues[i];
       if (cue.start >= now - 5 && cue.start <= now + 75) {
         if (cue.text && cue.text.length >= 2 && !sentenceCache.has(cue.text)) {
+          // Check official Turkish cue FIRST
+          const official = getOfficialTurkishTranslation(cue.text, cue.start);
+          if (official) {
+            cacheAndPersist(cue.text, official);
+            continue;
+          }
           count++;
           getSentenceTranslation(cue.text);
-          if (count >= 20) break;
+          if (count >= 15) break;
         }
       }
     }
@@ -1168,21 +1224,21 @@ function showSubBar(sentence, anchorRect, isDual = false) {
 
   currentSubSentence = sentence;
 
-  // 1. Instant Memory Cache (0 ms - previously pre-warmed)
-  if (sentenceCache.has(sentence)) {
-    textEl.textContent = sentenceCache.get(sentence);
+  // 1. Check Prime Video / Netflix official Turkish track FIRST (time overlap matched!)
+  const video = document.querySelector('video');
+  const officialTr = getOfficialTurkishTranslation(sentence, video?.currentTime);
+  if (officialTr) {
+    cacheAndPersist(sentence, officialTr);
+    textEl.textContent = officialTr;
     textEl.classList.remove('ydh-sub-loading');
     updateSubBarPosition(subBar, anchorRect, container);
     subBar.classList.add('ydh-sub-visible');
     return;
   }
 
-  // 2. Check Prime Video / Netflix official Turkish track (time overlap matched!)
-  const video = document.querySelector('video');
-  const officialTr = getOfficialTurkishTranslation(sentence, video?.currentTime);
-  if (officialTr) {
-    cacheAndPersist(sentence, officialTr);
-    textEl.textContent = officialTr;
+  // 2. Instant Memory Cache (0 ms - previously pre-warmed via Gemini AI)
+  if (sentenceCache.has(sentence)) {
+    textEl.textContent = sentenceCache.get(sentence);
     textEl.classList.remove('ydh-sub-loading');
     updateSubBarPosition(subBar, anchorRect, container);
     subBar.classList.add('ydh-sub-visible');
@@ -1616,15 +1672,14 @@ function getAllSubtitleCues(video) {
           });
         }
         if (res.length > 0) {
-          res.sort((a, b) => a.start - b.start);
-          return res;
+          return cleanAndMergeCues(res);
         }
       }
     }
   }
   // 4. Observed DOM history cues
   if (observedHistoryCues && observedHistoryCues.length > 0) {
-    return observedHistoryCues;
+    return cleanAndMergeCues(observedHistoryCues);
   }
   return [];
 }
@@ -1744,9 +1799,9 @@ function jumpToPreviousSubtitle() {
       showNavToast(`⏮ ${prevCue.text}`);
       return;
     } else if (currentCueIndex === 0) {
-      // In the first known cue: rewind 3.5s! NEVER act like S repeat
-      seekVideoToTime(video, Math.max(0, now - 3.5));
-      showNavToast(`⏮ -3.5s`);
+      // In the first known cue: rewind 2.0s! NEVER act like S repeat
+      seekVideoToTime(video, Math.max(0, now - 2.0));
+      showNavToast(`⏮ -2s`);
       return;
     }
 
@@ -1760,9 +1815,9 @@ function jumpToPreviousSubtitle() {
     }
   }
 
-  // Fallback if no cues: rewind 3.5 seconds
-  seekVideoToTime(video, Math.max(0, now - 3.5));
-  showNavToast(`⏮ -3.5s`);
+  // Fallback if no cues: rewind 2.0 seconds
+  seekVideoToTime(video, Math.max(0, now - 2.0));
+  showNavToast(`⏮ -2s`);
 }
 
 function jumpToNextSubtitle() {
@@ -1784,9 +1839,9 @@ function jumpToNextSubtitle() {
     }
   }
 
-  // Fallback: jump 3.5 seconds forward (NEVER freeze)
-  seekVideoToTime(video, now + 3.5);
-  showNavToast(`⏭ +3.5s`);
+  // Fallback: jump 2.0 seconds forward (NEVER freeze)
+  seekVideoToTime(video, now + 2.0);
+  showNavToast(`⏭ +2s`);
 }
 
 function repeatCurrentSubtitle() {
@@ -1840,9 +1895,9 @@ function repeatCurrentSubtitle() {
     return;
   }
 
-  // 4. Fallback if no cues: rewind 3 seconds
-  seekVideoToTime(video, Math.max(0, now - 3));
-  showNavToast(`🔁 -3s`);
+  // 4. Fallback if no cues: rewind 2.0 seconds
+  seekVideoToTime(video, Math.max(0, now - 2.0));
+  showNavToast(`🔁 -2s`);
 }
 
 // ── Floating On-Screen Navigation Controls (Left Screen Pill Dock) ───────────
