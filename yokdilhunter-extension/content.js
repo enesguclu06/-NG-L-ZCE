@@ -1734,22 +1734,24 @@ function jumpToPreviousSubtitle() {
   const cues = getAllSubtitleCues(video);
 
   if (cues && cues.length > 0) {
-    // If currently inside cue i, ALWAYS jump directly to cue i - 1! (Never repeats current cue)
-    const currentCueIndex = cues.findIndex(c => c.start <= (now + 0.2) && now <= (c.end + 0.2));
+    // 1. Check if we are currently inside a cue
+    const currentCueIndex = cues.findIndex(c => (c.start - 0.1) <= now && now <= (c.end + 0.2));
 
     if (currentCueIndex > 0) {
+      // Step strictly to previous cue
       const prevCue = cues[currentCueIndex - 1];
       seekVideoToTime(video, prevCue.start);
       showNavToast(`⏮ ${prevCue.text}`);
       return;
     } else if (currentCueIndex === 0) {
-      seekVideoToTime(video, cues[0].start);
-      showNavToast(`⏮ ${cues[0].text}`);
+      // In the first known cue: rewind 3.5s! NEVER act like S repeat
+      seekVideoToTime(video, Math.max(0, now - 3.5));
+      showNavToast(`⏮ -3.5s`);
       return;
     }
 
-    // If between cues (silence/gap), find the immediate last cue before now
-    const pastCues = cues.filter(c => c.start < (now - 0.2));
+    // 2. Between cues: find the last cue that ended before now
+    const pastCues = cues.filter(c => c.end <= (now + 0.1));
     if (pastCues.length > 0) {
       const prevCue = pastCues[pastCues.length - 1];
       seekVideoToTime(video, prevCue.start);
@@ -1775,20 +1777,14 @@ function jumpToNextSubtitle() {
   if (cues && cues.length > 0) {
     // Find the next cue starting strictly after now + 0.25s
     const nextCue = cues.find(c => c.start > (now + 0.25));
-    if (nextCue) {
-      // Guard against stale cross-episode cues (> 5 minutes away)
-      if ((nextCue.start - now) <= 300) {
-        seekVideoToTime(video, nextCue.start);
-        showNavToast(`⏭ ${nextCue.text}`);
-        return;
-      }
-    } else {
-      showNavToast('⏭ Bölüm sonu (başka altyazı yok)');
+    if (nextCue && (nextCue.start - now) <= 300) {
+      seekVideoToTime(video, nextCue.start);
+      showNavToast(`⏭ ${nextCue.text}`);
       return;
     }
   }
 
-  // Fallback: jump 3.5 seconds
+  // Fallback: jump 3.5 seconds forward (NEVER freeze)
   seekVideoToTime(video, now + 3.5);
   showNavToast(`⏭ +3.5s`);
 }
@@ -1804,7 +1800,7 @@ function repeatCurrentSubtitle() {
 
   // 1. Search official/preloaded cues FIRST (exact cue.start)
   if (cues && cues.length > 0) {
-    const currentCue = cues.find(c => c.start <= (now + 0.25) && now <= (c.end + 0.25));
+    const currentCue = cues.find(c => (c.start - 0.1) <= now && now <= (c.end + 0.3));
     if (currentCue) {
       seekVideoToTime(video, currentCue.start);
       showNavToast(`🔁 ${currentCue.text}`);
