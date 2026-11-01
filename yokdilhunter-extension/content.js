@@ -1017,14 +1017,20 @@ function syncAndPrewarmVideos() {
 
 // Get Turkish cue matching a given video time (±tolerance seconds)
 // Never caches by English sentence — always fresh lookup from platform's own track
-function getTurkishCueAtVideoTime(videoTime, toleranceSecs = 0.8) {
+function getTurkishCueAtVideoTime(videoTime, toleranceSecs = 1.5) {
   // 1. Official intercepted Turkish cues (Prime Video, Netflix, Disney+ stream)
   try {
     if (officialTurkishCues && officialTurkishCues.length > 0) {
-      // Find cue that is active at this exact video time
-      const match = officialTurkishCues.find(c =>
-        c.start <= (videoTime + toleranceSecs) && (videoTime - toleranceSecs) <= c.end
+      // Find cue strictly active at this video time
+      let match = officialTurkishCues.find(c =>
+        c.start <= videoTime && videoTime <= c.end
       );
+      // Widen search with tolerance if strict match fails
+      if (!match) {
+        match = officialTurkishCues.find(c =>
+          c.start <= (videoTime + toleranceSecs) && (videoTime - toleranceSecs) <= c.end
+        );
+      }
       if (match && match.text) return match.text;
     }
   } catch {}
@@ -1602,6 +1608,12 @@ function handleNavKey(key) {
   const now = Date.now();
   if (now - lastNavKeyTime < 180) return;
   lastNavKeyTime = now;
+
+  // Reset subtitle state before seek so stale cached sentence doesn't reappear
+  currentSubSentence = '';
+  if (subBar) {
+    subBar.classList.remove('ydh-sub-visible');
+  }
 
   if (k === 'a') {
     jumpToPreviousSubtitle();

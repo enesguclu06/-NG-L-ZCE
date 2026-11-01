@@ -126,15 +126,41 @@
 
   function detectLanguage(url, text) {
     const urlLower = (url || '').toLowerCase();
-    if (urlLower.includes('lang=tr') || urlLower.includes('language=tr') || urlLower.includes('/tr/') || urlLower.includes('turkish') || urlLower.includes('tur.vtt') || urlLower.includes('tr-tr')) {
+    // URL-based Turkish detection
+    if (
+      urlLower.includes('lang=tr') ||
+      urlLower.includes('language=tr') ||
+      urlLower.includes('/tr/') ||
+      urlLower.includes('turkish') ||
+      urlLower.includes('tur.vtt') ||
+      urlLower.includes('tr-tr') ||
+      urlLower.includes('tr_tr') ||
+      urlLower.includes('_tr.') ||
+      urlLower.includes('-tr.')
+    ) {
       return 'tr';
     }
+    // Content-based language detection (TTML/VTT headers)
     if (text && typeof text === 'string') {
-      const head = text.slice(0, 500).toLowerCase();
-      if (head.includes('xml:lang="tr"') || head.includes('lang="tr"')) return 'tr';
-      if (head.includes('xml:lang="en"') || head.includes('lang="en"')) return 'en';
+      const head = text.slice(0, 800).toLowerCase();
+      // Match xml:lang="tr", xml:lang="tr-TR", xml:lang="tr-tr", lang="tr", lang="tr-TR"
+      if (/xml:lang=["']tr(-\w+)?["']/i.test(text.slice(0, 800))) return 'tr';
+      if (/\blang=["']tr(-\w+)?["']/i.test(text.slice(0, 800))) return 'tr';
+      if (head.includes('xml:lang="en') || head.includes('lang="en')) return 'en';
     }
-    if (urlLower.includes('lang=en') || urlLower.includes('language=en') || urlLower.includes('/en/') || urlLower.includes('english') || urlLower.includes('eng.vtt') || urlLower.includes('en-us') || urlLower.includes('en-gb')) {
+    // URL-based English detection
+    if (
+      urlLower.includes('lang=en') ||
+      urlLower.includes('language=en') ||
+      urlLower.includes('/en/') ||
+      urlLower.includes('english') ||
+      urlLower.includes('eng.vtt') ||
+      urlLower.includes('en-us') ||
+      urlLower.includes('en-gb') ||
+      urlLower.includes('en_us') ||
+      urlLower.includes('_en.') ||
+      urlLower.includes('-en.')
+    ) {
       return 'en';
     }
     return 'unknown';
@@ -186,13 +212,23 @@
       u.includes('.vtt') ||
       u.includes('.ttml') ||
       u.includes('.dfxp') ||
+      u.includes('.srt') ||
       u.includes('timedtext') ||
       u.includes('/subtitles') ||
       u.includes('/captions') ||
+      u.includes('/subtitle') ||
+      u.includes('/caption') ||
       u.includes('atv-ext') ||
       u.includes('pv-cdn') ||
-      u.includes('nflxvideo.net') && (u.includes('?o=') || u.includes('xml')) ||
-      u.includes('youtube.com/api/timedtext')
+      u.includes('aiv-cdn') ||
+      u.includes('amazon.com/') && (u.includes('subtitle') || u.includes('caption') || u.includes('subs') || u.includes('timedtext')) ||
+      (u.includes('nflxvideo.net') && (u.includes('?o=') || u.includes('xml'))) ||
+      u.includes('youtube.com/api/timedtext') ||
+      u.includes('googlevideo.com') && u.includes('subtitle') ||
+      u.includes('dplus') && u.includes('subtitle') ||
+      u.includes('disneyplus') && u.includes('subtitle') ||
+      u.includes('hbomax') && u.includes('subtitle') ||
+      u.includes('max.com') && u.includes('subtitle')
     );
   }
 
