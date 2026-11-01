@@ -954,12 +954,65 @@ function preWarmCurrentOnScreenCue() {
   } catch {}
 }
 
+// ── Video / Episode Change Detector (Purges Stale Cues on Next Episode) ─────
+let lastObservedUrl = location.href;
+let lastObservedVideoSrc = '';
+let lastTrackedVideoTime = 0;
+
+function resetAllSubtitleData() {
+  observedHistoryCues = [];
+  preloadedSourceCues = [];
+  currentActiveCue = null;
+  lastFinishedCue = null;
+  currentSubSentence = '';
+  lastPreWarmTime = -1;
+  lastPreWarmedCueText = '';
+  hideSubBar();
+}
+
+function checkVideoEpisodeChange(video) {
+  const currentUrl = location.href;
+  const currentSrc = video ? (video.currentSrc || video.src || '') : '';
+  const currentTime = video ? (video.currentTime || 0) : 0;
+
+  let resetNeeded = false;
+
+  // 1. URL changed (SPA episode change on Prime Video / Netflix / YouTube)
+  if (currentUrl !== lastObservedUrl) {
+    lastObservedUrl = currentUrl;
+    resetNeeded = true;
+  }
+
+  // 2. Video element media source changed
+  if (currentSrc && lastObservedVideoSrc && currentSrc !== lastObservedVideoSrc) {
+    resetNeeded = true;
+  }
+  if (currentSrc) {
+    lastObservedVideoSrc = currentSrc;
+  }
+
+  // 3. Playback time jumped from late in video (>60s) back to the beginning (<8s)
+  if (currentTime < 8 && lastTrackedVideoTime > 60) {
+    resetNeeded = true;
+  }
+  lastTrackedVideoTime = currentTime;
+
+  if (resetNeeded) {
+    resetAllSubtitleData();
+  }
+}
+
+window.addEventListener('popstate', resetAllSubtitleData);
+
 function syncAndPrewarmVideos() {
   const videos = document.querySelectorAll('video');
   for (const v of videos) {
+    checkVideoEpisodeChange(v);
+
     if (!v._ydhBound) {
       v._ydhBound = true;
       v.addEventListener('timeupdate', () => {
+        checkVideoEpisodeChange(v);
         const liveSub = findActiveSubtitleCue();
         if (liveSub?.text) trackActiveCue(liveSub.text, v.currentTime);
 
@@ -972,6 +1025,7 @@ function syncAndPrewarmVideos() {
         }
       });
       v.addEventListener('seeked', () => {
+        checkVideoEpisodeChange(v);
         const liveSub = findActiveSubtitleCue();
         if (liveSub?.text) trackActiveCue(liveSub.text, v.currentTime);
 
@@ -1590,6 +1644,7 @@ function jumpToPreviousSubtitle() {
   const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
   if (!video) return;
 
+  checkVideoEpisodeChange(video);
   const now = video.currentTime;
   const cues = getAllSubtitleCues(video);
 
@@ -1604,20 +1659,22 @@ function jumpToPreviousSubtitle() {
         showNavToast(`⏮ ${currentCue.text}`);
         return;
       }
-      // Otherwise jump to the previous cue
+      // Otherwise jump to the previous cue (safely bounded to max 30s)
       if (currentCueIndex > 0) {
         const prevCue = cues[currentCueIndex - 1];
-        seekVideoToTime(video, prevCue.start);
-        showNavToast(`⏮ ${prevCue.text}`);
-        return;
+        if (now - prevCue.start <= 30) {
+          seekVideoToTime(video, prevCue.start);
+          showNavToast(`⏮ ${prevCue.text}`);
+          return;
+        }
       } else {
         seekVideoToTime(video, currentCue.start);
         showNavToast(`⏮ ${currentCue.text}`);
         return;
       }
     } else {
-      // Find the last cue before current time
-      const prevCues = cues.filter(c => c.start < now - 0.2);
+      // Find the last cue before current time, within 30s
+      const prevCues = cues.filter(c => c.start < (now - 0.2) && (now - c.start) <= 30);
       if (prevCues.length > 0) {
         const target = prevCues[prevCues.length - 1];
         seekVideoToTime(video, target.start);
@@ -1637,11 +1694,13 @@ function jumpToNextSubtitle() {
   const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
   if (!video) return;
 
+  checkVideoEpisodeChange(video);
   const now = video.currentTime;
   const cues = getAllSubtitleCues(video);
 
   if (cues && cues.length > 0) {
-    const nextCue = cues.find(c => c.start > (now + 0.25));
+    // Find next cue starting between now + 0.2s and now + 30s (NEVER jump 12 minutes!)
+    const nextCue = cues.find(c => c.start > (now + 0.2) && (c.start - now) <= 30);
     if (nextCue) {
       seekVideoToTime(video, nextCue.start);
       showNavToast(`⏭ ${nextCue.text}`);
@@ -1649,7 +1708,7 @@ function jumpToNextSubtitle() {
     }
   }
 
-  // Fallback if no cues: jump forward 3.5 seconds
+  // Fallback if no nearby cue: jump forward 3.5 seconds
   seekVideoToTime(video, now + 3.5);
   showNavToast(`⏭ +3.5s`);
 }
@@ -1659,43 +1718,35 @@ function repeatCurrentSubtitle() {
   const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
   if (!video) return;
 
+  checkVideoEpisodeChange(video);
   const now = video.currentTime;
 
   // 1. Direct active DOM subtitle check (100% accurate zero-latency repeat!)
   const activeDomCue = findActiveSubtitleCue();
   if (activeDomCue && activeDomCue.text) {
     trackActiveCue(activeDomCue.text, now);
-    if (currentActiveCue && currentActiveCue.start <= now) {
+    if (currentActiveCue && currentActiveCue.start <= now && (now - currentActiveCue.start) <= 25) {
       seekVideoToTime(video, currentActiveCue.start);
       showNavToast(`🔁 ${activeDomCue.text}`);
       return;
     }
   }
 
-  // 2. Search full cue list
+  // 2. Search full cue list within 30s
   const cues = getAllSubtitleCues(video);
   if (cues && cues.length > 0) {
     // Current cue on screen
     const currentCue = cues.find(c => c.start <= (now + 0.35) && now <= (c.end + 0.35));
-    if (currentCue) {
+    if (currentCue && (now - currentCue.start) <= 30) {
       seekVideoToTime(video, currentCue.start);
       showNavToast(`🔁 ${currentCue.text}`);
       return;
     }
 
-    // Cue that ended within the last 2.5 seconds
-    const recentCues = cues.filter(c => c.start <= now && (now - c.end) < 2.5);
+    // Cue that ended within the last 3.0 seconds
+    const recentCues = cues.filter(c => c.start <= now && (now - c.end) < 3.0 && (now - c.start) <= 30);
     if (recentCues.length > 0) {
       const target = recentCues[recentCues.length - 1];
-      seekVideoToTime(video, target.start);
-      showNavToast(`🔁 ${target.text}`);
-      return;
-    }
-
-    // Previous cue
-    const prevCues = cues.filter(c => c.start <= now);
-    if (prevCues.length > 0) {
-      const target = prevCues[prevCues.length - 1];
       seekVideoToTime(video, target.start);
       showNavToast(`🔁 ${target.text}`);
       return;
@@ -1703,12 +1754,12 @@ function repeatCurrentSubtitle() {
   }
 
   // 3. Fallback: recently tracked active or finished cue
-  if (currentActiveCue && currentActiveCue.start < now) {
+  if (currentActiveCue && currentActiveCue.start < now && (now - currentActiveCue.start) <= 20) {
     seekVideoToTime(video, currentActiveCue.start);
     showNavToast(`🔁 ${currentActiveCue.text}`);
     return;
   }
-  if (lastFinishedCue && (now - lastFinishedCue.end) < 3.5) {
+  if (lastFinishedCue && (now - lastFinishedCue.end) < 3.5 && (now - lastFinishedCue.start) <= 20) {
     seekVideoToTime(video, lastFinishedCue.start);
     showNavToast(`🔁 ${lastFinishedCue.text}`);
     return;
