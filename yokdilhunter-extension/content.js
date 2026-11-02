@@ -550,11 +550,23 @@ function cacheAndPersist(trimmed, translation) {
   } catch {}
 }
 
+function normalizeSubtitleIdioms(text) {
+  if (!text) return '';
+  return text
+    .replace(/\bup to (my|his|her|your|our|their) asterisk\b/gi, 'up to $1 neck')
+    .replace(/\bkiss my asterisk\b/gi, 'kiss my ass')
+    .replace(/\bkick (some )?asterisk\b/gi, 'kick $1ass')
+    .replace(/\bmy asterisk\b/gi, 'my ass')
+    .replace(/\bbad[- ]?asterisk\b/gi, 'badass')
+    .replace(/\bpiece of asterisk\b/gi, 'piece of shit');
+}
+
 async function fastDirectFetch(trimmed) {
   try {
     const isEnglish = /^[a-zA-Z0-9\s.,!?'"()\-—:;]+$/.test(trimmed);
     const srcLang = isEnglish ? 'en' : 'auto';
-    const url = `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${srcLang}&tl=tr&q=${encodeURIComponent(trimmed)}`;
+    const normalized = normalizeSubtitleIdioms(trimmed);
+    const url = `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${srcLang}&tl=tr&q=${encodeURIComponent(normalized)}`;
     const res = await fetch(url);
     if (res.ok) {
       const data = await res.json();
@@ -579,26 +591,7 @@ function getSentenceTranslation(sentence) {
   }
 
   const p = (async () => {
-    // 1. In AI mode: query background service worker (Gemini AI contextual movie dialogue translation)
-    if (activeSaveMode !== 'classic') {
-      try {
-        const aiTrans = await new Promise((resolve) => {
-          chrome.runtime.sendMessage({ action: 'translate_sentence', sentence: trimmed }, (response) => {
-            if (chrome.runtime.lastError) {
-              resolve('');
-              return;
-            }
-            resolve((response?.translation || '').trim());
-          });
-        });
-        if (aiTrans && (aiTrans.length >= 2 || trimmed.length <= 2)) {
-          cacheAndPersist(trimmed, aiTrans);
-          return aiTrans;
-        }
-      } catch {}
-    }
-
-    // 2. Direct fast fetch inside content script (~60-90ms Google Translate fallback)
+    // 1. Direct fast fetch in content script (~40-80ms blazing fast zero-latency)
     try {
       const direct = await fastDirectFetch(trimmed);
       if (direct && (direct.length >= 2 || trimmed.length <= 2)) {
@@ -607,7 +600,7 @@ function getSentenceTranslation(sentence) {
       }
     } catch {}
 
-    // 3. Fallback to background service worker via IPC (~120ms)
+    // 2. Fallback to background service worker via IPC (~100ms)
     return new Promise((resolve) => {
       try {
         chrome.runtime.sendMessage({ action: 'translate_sentence', sentence: trimmed }, (response) => {
