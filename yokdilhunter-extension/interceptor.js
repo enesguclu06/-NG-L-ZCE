@@ -63,6 +63,7 @@
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
       .replace(/&nbsp;/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -71,7 +72,6 @@
   function parseWebVTT(text) {
     const cues = [];
     if (!text || typeof text !== 'string') return cues;
-    // Split by double newline
     const blocks = text.split(/\r?\n\r?\n/);
     const timeRegex = /((?:\d{1,2}:)?\d{2}:\d{2}[.,]\d{3})\s*-->\s*((?:\d{1,2}:)?\d{2}:\d{2}[.,]\d{3})/;
 
@@ -96,17 +96,22 @@
   function parseTTML(text) {
     const cues = [];
     if (!text || typeof text !== 'string') return cues;
-    // Match <p ... begin="..." end="...">Text</p> or <tt:p>
-    const pRegex = /<(?:[a-zA-Z0-9]+:)?p\b[^>]*?\bbegin=["']([^"']+)["'][^>]*?(?:\bend=["']([^"']+)["']|\bdur=["']([^"']+)["'])?[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9]+:)?p>/gi;
+
+    // Match <p ...>Text</p> or <tt:p ...>Text</tt:p>
+    const pRegex = /<(?:[a-zA-Z0-9]+:)?p\b([^>]*)>([\s\S]*?)<\/(?:[a-zA-Z0-9]+:)?p>/gi;
     let match;
     while ((match = pRegex.exec(text)) !== null) {
-      const beginStr = match[1];
-      const endStr = match[2];
-      const durStr = match[3];
-      const rawText = match[4];
+      const attrs = match[1];
+      const rawText = match[2];
 
-      const start = parseTimeSeconds(beginStr);
-      let end = endStr ? parseTimeSeconds(endStr) : (durStr ? start + parseTimeSeconds(durStr) : start + 3.5);
+      const beginMatch = attrs.match(/\bbegin=["']([^"']+)["']/i);
+      if (!beginMatch) continue;
+
+      const endMatch = attrs.match(/\bend=["']([^"']+)["']/i);
+      const durMatch = attrs.match(/\bdur=["']([^"']+)["']/i);
+
+      const start = parseTimeSeconds(beginMatch[1]);
+      let end = endMatch ? parseTimeSeconds(endMatch[1]) : (durMatch ? start + parseTimeSeconds(durMatch[1]) : start + 3.5);
       const cueText = cleanSubtitleText(rawText);
       if (cueText && cueText.length >= 2) {
         cues.push({ start, end, text: cueText });
@@ -115,15 +120,19 @@
 
     // Some TTML files embed timed spans inside paragraphs
     if (cues.length === 0) {
-      const spanRegex = /<(?:[a-zA-Z0-9]+:)?span\b[^>]*?\bbegin=["']([^"']+)["'][^>]*?(?:\bend=["']([^"']+)["']|\bdur=["']([^"']+)["'])?[^>]*>([\s\S]*?)<\/(?:[a-zA-Z0-9]+:)?span>/gi;
+      const spanRegex = /<(?:[a-zA-Z0-9]+:)?span\b([^>]*)>([\s\S]*?)<\/(?:[a-zA-Z0-9]+:)?span>/gi;
       while ((match = spanRegex.exec(text)) !== null) {
-        const beginStr = match[1];
-        const endStr = match[2];
-        const durStr = match[3];
-        const rawText = match[4];
+        const attrs = match[1];
+        const rawText = match[2];
 
-        const start = parseTimeSeconds(beginStr);
-        let end = endStr ? parseTimeSeconds(endStr) : (durStr ? start + parseTimeSeconds(durStr) : start + 3.5);
+        const beginMatch = attrs.match(/\bbegin=["']([^"']+)["']/i);
+        if (!beginMatch) continue;
+
+        const endMatch = attrs.match(/\bend=["']([^"']+)["']/i);
+        const durMatch = attrs.match(/\bdur=["']([^"']+)["']/i);
+
+        const start = parseTimeSeconds(beginMatch[1]);
+        let end = endMatch ? parseTimeSeconds(endMatch[1]) : (durMatch ? start + parseTimeSeconds(durMatch[1]) : start + 3.5);
         const cueText = cleanSubtitleText(rawText);
         if (cueText && cueText.length >= 2) {
           cues.push({ start, end, text: cueText });
@@ -178,10 +187,7 @@
       urlLower.includes('_tur.vtt') ||
       urlLower.includes('-tur.vtt') ||
       urlLower.includes('_tr.vtt') ||
-      urlLower.includes('-tr.vtt') ||
-      urlLower.includes('/tr-tr/') ||
-      urlLower.includes('/tur/') ||
-      urlLower.includes('/tr/')
+      urlLower.includes('-tr.vtt')
     ) {
       return 'tr';
     }
@@ -202,7 +208,7 @@
     return 'en';
   }
 
-  function processSubtitlePayload(url, rawContent) {
+  function processSubtitlePayload(url, rawContent, hintLang = null) {
     if (!rawContent) return;
     try {
       let cues = [];
@@ -210,7 +216,7 @@
 
       if (isString && rawContent.includes('WEBVTT')) {
         cues = parseWebVTT(rawContent);
-      } else if (isString && (rawContent.includes('<tt') || rawContent.includes('<p begin=') || rawContent.includes(':p begin='))) {
+      } else if (isString && (rawContent.includes('<tt') || rawContent.includes('<p begin=') || rawContent.includes(':p begin=') || rawContent.includes('<p ') || rawContent.includes('<span begin='))) {
         cues = parseTTML(rawContent);
       } else if (isString && rawContent.includes('<transcript>')) {
         cues = parseYouTubeXml(rawContent);
@@ -224,7 +230,7 @@
       }
 
       if (cues && cues.length > 0) {
-        const lang = detectLanguage(url, isString ? rawContent : '');
+        const lang = hintLang || detectLanguage(url, isString ? rawContent : '');
         // Sort cues chronologically
         cues.sort((a, b) => a.start - b.start);
 
@@ -241,13 +247,83 @@
     }
   }
 
+  let lastFetchedTrSubtitleUrl = '';
+
+  function inspectManifestJson(obj) {
+    if (!obj || typeof obj !== 'object') return;
+    const candidates = [];
+
+    function walk(o, depth) {
+      if (!o || depth > 6) return;
+      if (Array.isArray(o)) {
+        for (const item of o) {
+          if (item && typeof item === 'object') {
+            const u = item.url || item.subtitleUrl || item.timedTextUrl || item.href || item.src;
+            const l = item.languageCode || item.lang || item.displayName || item.language || item.label || item.trackId;
+            if (u && typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://') || u.startsWith('/'))) {
+              candidates.push({ url: u, lang: String(l || '') });
+            }
+          }
+          walk(item, depth + 1);
+        }
+      } else if (typeof o === 'object') {
+        for (const k of Object.keys(o)) {
+          walk(o[k], depth + 1);
+        }
+      }
+    }
+
+    try { walk(obj, 0); } catch {}
+
+    for (const c of candidates) {
+      const l = c.lang.toLowerCase();
+      const isTr = l.includes('tr') || l.includes('turk') || l.includes('türk');
+      if (isTr) {
+        let fullUrl = c.url;
+        if (fullUrl.startsWith('/')) {
+          try { fullUrl = new URL(fullUrl, window.location.origin).href; } catch {}
+        }
+        if (fullUrl === lastFetchedTrSubtitleUrl) continue;
+        lastFetchedTrSubtitleUrl = fullUrl;
+
+        fetch(fullUrl)
+          .then(r => r.text())
+          .then(text => {
+            if (text && text.length > 50) {
+              processSubtitlePayload(fullUrl, text, 'tr');
+            }
+          })
+          .catch(() => {});
+        break; // Found the primary Turkish subtitle track
+      }
+    }
+  }
+
+  function isManifestUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    const u = url.toLowerCase();
+    return (
+      u.includes('getplaybackresources') ||
+      u.includes('playbackresources') ||
+      u.includes('/playback/manifest') ||
+      u.includes('licenseandplaybackmetadata') ||
+      (u.includes('primevideo.com') && (u.includes('playback') || u.includes('metadata'))) ||
+      (u.includes('amazon.com') && (u.includes('playback') || u.includes('metadata')))
+    );
+  }
+
   function isSubtitleUrl(url) {
     if (!url || typeof url !== 'string') return false;
     const u = url.toLowerCase();
-    // Exclude video/audio media chunks to save CPU & memory
-    if (u.includes('.mp4') || u.includes('.m4s') || u.includes('.ts') || u.includes('.m4a') || u.includes('.webm')) {
+
+    // Exclude video/audio media chunks (unless clearly subtitle/timedtext related)
+    if (
+      (u.includes('.mp4') || u.includes('.ts') || u.includes('.m4a') || u.includes('.m4v') || u.includes('.webm')) &&
+      !u.includes('sub') && !u.includes('caption') && !u.includes('text')
+    ) {
       return false;
     }
+
     return (
       u.includes('.vtt') ||
       u.includes('.ttml') ||
@@ -261,10 +337,11 @@
       u.includes('tracktype=subtitles') ||
       u.includes('format=ttml') ||
       u.includes('format=vtt') ||
-      (u.includes('amazon.com') && (u.includes('subtitle') || u.includes('caption') || u.includes('timedtext') || u.includes('dfxp'))) ||
-      (u.includes('pv-cdn') && (u.includes('subtitle') || u.includes('caption') || u.includes('timedtext') || u.includes('dfxp') || u.includes('.vtt'))) ||
-      (u.includes('aiv-cdn') && (u.includes('subtitle') || u.includes('caption') || u.includes('timedtext') || u.includes('dfxp') || u.includes('.vtt'))) ||
-      (u.includes('atv-ext') && (u.includes('subtitle') || u.includes('caption') || u.includes('timedtext') || u.includes('dfxp') || u.includes('.vtt'))) ||
+      u.includes('format=dfxp') ||
+      u.includes('pv-cdn.net') ||
+      u.includes('aiv-cdn.net') ||
+      u.includes('atv-ext') ||
+      (u.includes('amazon.com') && (u.includes('subtitle') || u.includes('caption') || u.includes('timedtext') || u.includes('dfxp') || u.includes('text') || u.includes('subs'))) ||
       (u.includes('nflxvideo.net') && (u.includes('?o=') || u.includes('xml') || u.includes('vtt'))) ||
       u.includes('youtube.com/api/timedtext') ||
       (u.includes('googlevideo.com') && u.includes('subtitle')) ||
@@ -287,6 +364,11 @@
           clone.text().then(text => {
             if (text) processSubtitlePayload(url, text);
           }).catch(() => {});
+        } else if (isManifestUrl(url)) {
+          const clone = res.clone();
+          clone.json().then(obj => {
+            if (obj) inspectManifestJson(obj);
+          }).catch(() => {});
         }
       } catch {}
       return res;
@@ -306,21 +388,31 @@
     XMLHttpRequest.prototype.send = function() {
       this.addEventListener('load', function() {
         try {
-          if (this._ydhUrl && isSubtitleUrl(this._ydhUrl)) {
-            const rType = this.responseType;
-            if (!rType || rType === 'text') {
-              if (typeof this.responseText === 'string' && this.responseText) {
-                processSubtitlePayload(this._ydhUrl, this.responseText);
-              }
-            } else if (rType === 'arraybuffer' && this.response) {
-              const text = new TextDecoder('utf-8').decode(this.response);
-              if (text) processSubtitlePayload(this._ydhUrl, text);
-            } else if (rType === 'blob' && this.response instanceof Blob) {
-              this.response.text().then(text => {
+          if (this._ydhUrl) {
+            if (isSubtitleUrl(this._ydhUrl)) {
+              const rType = this.responseType;
+              if (!rType || rType === 'text') {
+                if (typeof this.responseText === 'string' && this.responseText) {
+                  processSubtitlePayload(this._ydhUrl, this.responseText);
+                }
+              } else if (rType === 'arraybuffer' && this.response) {
+                const text = new TextDecoder('utf-8').decode(this.response);
                 if (text) processSubtitlePayload(this._ydhUrl, text);
-              }).catch(() => {});
-            } else if (typeof this.response === 'string' && this.response) {
-              processSubtitlePayload(this._ydhUrl, this.response);
+              } else if (rType === 'blob' && this.response instanceof Blob) {
+                this.response.text().then(text => {
+                  if (text) processSubtitlePayload(this._ydhUrl, text);
+                }).catch(() => {});
+              } else if (typeof this.response === 'string' && this.response) {
+                processSubtitlePayload(this._ydhUrl, this.response);
+              }
+            } else if (isManifestUrl(this._ydhUrl)) {
+              try {
+                const text = typeof this.responseText === 'string' ? this.responseText : (typeof this.response === 'string' ? this.response : '');
+                if (text) {
+                  const obj = JSON.parse(text);
+                  inspectManifestJson(obj);
+                }
+              } catch {}
             }
           }
         } catch {}
@@ -388,8 +480,4 @@
   window.addEventListener('keydown', handleNavKeyInMainWorld, true);
   window.addEventListener('keypress', handleNavKeyInMainWorld, true);
   window.addEventListener('keyup', handleNavKeyInMainWorld, true);
-  document.addEventListener('keydown', handleNavKeyInMainWorld, true);
-  document.addEventListener('keypress', handleNavKeyInMainWorld, true);
-  document.addEventListener('keyup', handleNavKeyInMainWorld, true);
 })();
-

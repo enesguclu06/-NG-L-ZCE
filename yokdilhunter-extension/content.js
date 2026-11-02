@@ -521,15 +521,17 @@ window.addEventListener('blur', () => {
 const sentenceCache = new Map();
 const pendingTranslations = new Map();
 
-// Purge old potentially corrupted caches from previous versions
+// Purge old potentially corrupted caches from previous broken versions
 try {
   sessionStorage.removeItem('ydh_sub_cache');
   sessionStorage.removeItem('ydh_sub_cache_v2');
+  sessionStorage.removeItem('ydh_sub_cache_v3');
+  sessionStorage.removeItem('ydh_sub_cache_v4');
 } catch {}
 
 // Load persistent session cache for instant replay (0ms)
 try {
-  const saved = sessionStorage.getItem('ydh_sub_cache_v3');
+  const saved = sessionStorage.getItem('ydh_sub_cache_v5');
   if (saved) {
     const parsed = JSON.parse(saved);
     for (const [k, v] of Object.entries(parsed)) {
@@ -539,14 +541,15 @@ try {
 } catch {}
 
 function cacheAndPersist(trimmed, translation) {
+  if (!trimmed || !translation) return;
   if (sentenceCache.size > 600) {
     const firstKey = sentenceCache.keys().next().value;
     sentenceCache.delete(firstKey);
   }
   sentenceCache.set(trimmed, translation);
   try {
-    const obj = Object.fromEntries(Array.from(sentenceCache.entries()).slice(-200));
-    sessionStorage.setItem('ydh_sub_cache_v3', JSON.stringify(obj));
+    const obj = Object.fromEntries(Array.from(sentenceCache.entries()).slice(-300));
+    sessionStorage.setItem('ydh_sub_cache_v5', JSON.stringify(obj));
   } catch {}
 }
 
@@ -740,36 +743,6 @@ function findActiveSubtitleCue() {
     }
   } catch {}
 
-  // Fallback 2: Check preloaded intercepted cues matching video currentTime
-  if (typeof preloadedSourceCues !== 'undefined' && preloadedSourceCues?.length > 0) {
-    try {
-      const v = document.querySelector('video');
-      if (v && !v.paused) {
-        const now = v.currentTime || 0;
-        const matching = preloadedSourceCues.filter(c => c.start <= (now + 0.15) && (now - 0.15) <= c.end);
-        if (matching.length > 0) {
-          matching.sort((a, b) => b.start - a.start);
-          const match = matching[0];
-          if (match && match.text) {
-            const vRect = v.getBoundingClientRect();
-            return {
-              el: v,
-              text: match.text,
-              rect: {
-                top: vRect.bottom - 95,
-                bottom: vRect.bottom - 45,
-                left: vRect.left + vRect.width * 0.15,
-                right: vRect.left + vRect.width * 0.85,
-                width: vRect.width * 0.7,
-                height: 50
-              }
-            };
-          }
-        }
-      }
-    } catch {}
-  }
-
   return null;
 }
 
@@ -950,12 +923,16 @@ let lastNavKeyTime = 0;
 window.addEventListener('message', (event) => {
   if (event.source !== window || !event.data || event.data.from !== 'ydh_interceptor') return;
   if (event.data.action === 'cues_loaded') {
-    if (event.data.lang === 'tr') {
-      officialTurkishCues = cleanAndMergeCues([...officialTurkishCues, ...(event.data.cues || [])]);
-    } else {
-      preloadedSourceCues = cleanAndMergeCues([...preloadedSourceCues, ...(event.data.cues || [])]);
-      const v = document.querySelector('video');
-      preWarmUpcomingCues(v?.currentTime || 0);
+    const raw = event.data.cues || [];
+    const cues = cleanAndMergeCues(raw);
+    if (cues && cues.length > 0) {
+      if (event.data.lang === 'tr') {
+        officialTurkishCues = cues;
+      } else {
+        preloadedSourceCues = cues;
+        const v = document.querySelector('video');
+        preWarmUpcomingCues(v?.currentTime || 0);
+      }
     }
   } else if (event.data.action === 'nav_key') {
     handleNavKey(event.data.key);
@@ -974,15 +951,9 @@ function preWarmUpcomingCues(currentTime) {
       const cue = preloadedSourceCues[i];
       if (cue.start >= now - 5 && cue.start <= now + 75) {
         if (cue.text && cue.text.length >= 2 && !sentenceCache.has(cue.text)) {
-          // Check official Turkish cue FIRST
-          const official = getOfficialTurkishTranslation(cue.text, cue.start);
-          if (official) {
-            cacheAndPersist(cue.text, official);
-            continue;
-          }
           count++;
           getSentenceTranslation(cue.text);
-          if (count >= 15) break;
+          if (count >= 20) break;
         }
       }
     }
@@ -1009,10 +980,25 @@ function preWarmCurrentOnScreenCue() {
   } catch {}
 }
 
-// ── Video / Episode Change Detector (Purges Stale Cues on Next Episode) ─────
-let lastObservedUrl = location.href;
-let lastObservedVideoSrc = '';
-let lastTrackedVideoTime = 0;
+// ── Video / Episode Change Detector (Purges Stale Cues Only on Actual Episode Change) ──
+let lastObservedMediaId = '';
+
+function getMediaIdentifier() {
+  try {
+    const u = new URL(location.href);
+    const asin = u.searchParams.get('asin') || u.searchParams.get('titleId');
+    if (asin) return asin;
+    const detailMatch = u.pathname.match(/\/detail\/([^\/?#]+)/);
+    if (detailMatch) return detailMatch[1];
+    const netflixMatch = u.pathname.match(/\/watch\/(\d+)/);
+    if (netflixMatch) return netflixMatch[1];
+    const ytV = u.searchParams.get('v');
+    if (ytV) return ytV;
+    return u.pathname;
+  } catch {
+    return location.pathname;
+  }
+}
 
 function resetAllSubtitleData() {
   observedHistoryCues = [];
@@ -1027,36 +1013,12 @@ function resetAllSubtitleData() {
 }
 
 function checkVideoEpisodeChange(video) {
-  const currentUrl = location.href;
-  const currentSrc = video ? (video.currentSrc || video.src || '') : '';
-
-  let resetNeeded = false;
-
-  // 1. URL changed (SPA episode change on Prime Video / Netflix / YouTube)
-  if (currentUrl !== lastObservedUrl) {
-    try {
-      const oldUrl = new URL(lastObservedUrl);
-      const newUrl = new URL(currentUrl);
-      if (oldUrl.pathname !== newUrl.pathname || oldUrl.search !== newUrl.search) {
-        resetNeeded = true;
-      }
-    } catch {
-      resetNeeded = true;
-    }
-    lastObservedUrl = currentUrl;
-  }
-
-  // 2. Video element media source changed
-  if (currentSrc && lastObservedVideoSrc && currentSrc !== lastObservedVideoSrc) {
-    resetNeeded = true;
-  }
-  if (currentSrc) {
-    lastObservedVideoSrc = currentSrc;
-  }
-
-  // NOTE: Never reset on playback seek/replay (currentTime rewind) — the episode is the same!
-  if (resetNeeded) {
+  const currentId = getMediaIdentifier();
+  if (currentId && lastObservedMediaId && currentId !== lastObservedMediaId) {
+    lastObservedMediaId = currentId;
     resetAllSubtitleData();
+  } else if (!lastObservedMediaId && currentId) {
+    lastObservedMediaId = currentId;
   }
 }
 
@@ -1064,11 +1026,12 @@ function tryLoadSubtitlesFromPerformanceResources() {
   if (preloadedSourceCues && preloadedSourceCues.length > 0) return;
   try {
     const entries = performance.getEntriesByType('resource');
-    for (const r of entries) {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const r = entries[i];
       const u = (r.name || '').toLowerCase();
       if (
         (u.includes('.dfxp') || u.includes('.ttml') || u.includes('.vtt') || u.includes('timedtext') || u.includes('/subtitles') || u.includes('/captions')) &&
-        !u.includes('.mp4') && !u.includes('.m4s') && !u.includes('.ts') && !u.includes('.m4a')
+        !u.includes('.mp4') && !u.includes('.m4a') && !u.includes('.ts')
       ) {
         fetch(r.name)
           .then(res => res.text())
@@ -1089,42 +1052,40 @@ function tryLoadSubtitlesFromPerformanceResources() {
   } catch {}
 }
 
+window.addEventListener('popstate', () => {
+  checkVideoEpisodeChange();
+});
+
 function getOfficialTurkishTranslation(sentence, videoTime) {
   if (!officialTurkishCues || officialTurkishCues.length === 0) return null;
   const now = typeof videoTime === 'number' ? videoTime : (document.querySelector('video')?.currentTime || 0);
 
-  // 1. If we have matching preloadedSourceCue for this sentence, compute exact time overlap
+  // 1. Time overlap match with the active English source cue
   if (preloadedSourceCues && preloadedSourceCues.length > 0) {
-    const srcCue = preloadedSourceCues.find(c => c.text === sentence && Math.abs(c.start - now) < 5.0) ||
-                   preloadedSourceCues.find(c => c.text === sentence);
+    const srcCue = preloadedSourceCues.find(c => Math.abs(c.start - now) < 2.5 && (c.text === sentence || sentence.includes(c.text) || c.text.includes(sentence))) ||
+                   preloadedSourceCues.find(c => (c.start - 0.25) <= now && now <= (c.end + 0.25));
+
     if (srcCue) {
-      let bestMatch = null;
-      let maxOverlap = 0;
-      for (const tr of officialTurkishCues) {
+      const overlapping = officialTurkishCues.filter(tr => {
         const overlapStart = Math.max(srcCue.start, tr.start);
         const overlapEnd = Math.min(srcCue.end, tr.end);
         const overlap = overlapEnd - overlapStart;
-        if (overlap > maxOverlap) {
-          maxOverlap = overlap;
-          bestMatch = tr;
-        }
-      }
-      if (bestMatch && maxOverlap >= 0.3) {
-        return bestMatch.text;
+        return overlap > 0.25 || (Math.abs(tr.start - srcCue.start) < 0.8 && Math.abs(tr.end - srcCue.end) < 1.2);
+      });
+      if (overlapping.length > 0) {
+        return overlapping.map(c => c.text).join(' ');
       }
     }
   }
 
-  // 2. Strict clock-based overlap (must overlap within current video frame)
-  const directMatches = officialTurkishCues.filter(c => c.start <= (now + 0.15) && now <= (c.end + 0.15));
-  if (directMatches.length > 0) {
-    return directMatches.map(c => c.text).join(' ');
+  // 2. Direct time-based match: Turkish cue active at current playback clock
+  const activeTrCues = officialTurkishCues.filter(c => (c.start - 0.35) <= now && now <= (c.end + 0.35));
+  if (activeTrCues.length > 0) {
+    return activeTrCues.map(c => c.text).join(' ');
   }
 
   return null;
 }
-
-window.addEventListener('popstate', resetAllSubtitleData);
 
 function syncAndPrewarmVideos() {
   const videos = document.querySelectorAll('video');
@@ -1173,6 +1134,22 @@ function syncAndPrewarmVideos() {
           track.mode = 'hidden';
         }
 
+        // Read native Turkish track cues if available
+        if (isTurkish && track.cues && track.cues.length > 0 && officialTurkishCues.length === 0) {
+          const res = [];
+          for (let c = 0; c < track.cues.length; c++) {
+            const cue = track.cues[c];
+            res.push({
+              start: cue.startTime,
+              end: cue.endTime,
+              text: (cue.text || '').replace(/<[^>]+>/g, '').trim()
+            });
+          }
+          if (res.length > 0) {
+            officialTurkishCues = cleanAndMergeCues(res);
+          }
+        }
+
         // Silently activate source track if disabled to load cues
         if (!isTurkish && track.mode === 'disabled') {
           track.mode = 'hidden';
@@ -1217,11 +1194,10 @@ function showSubBar(sentence, anchorRect, isDual = false) {
 
   currentSubSentence = sentence;
 
-  // 1. Check Prime Video / Netflix official Turkish track FIRST (time overlap matched!)
+  // 1. Prime Video / Platform's Official Turkish Track FIRST (Instant 0ms cinema translation!)
   const video = document.querySelector('video');
   const officialTr = getOfficialTurkishTranslation(sentence, video?.currentTime);
   if (officialTr) {
-    cacheAndPersist(sentence, officialTr);
     textEl.textContent = officialTr;
     textEl.classList.remove('ydh-sub-loading');
     updateSubBarPosition(subBar, anchorRect, container);
@@ -1229,7 +1205,7 @@ function showSubBar(sentence, anchorRect, isDual = false) {
     return;
   }
 
-  // 2. Instant Memory Cache (0 ms - previously pre-warmed via Gemini AI)
+  // 2. Instant Memory Cache (0 ms - previously pre-warmed via Google Translate)
   if (sentenceCache.has(sentence)) {
     textEl.textContent = sentenceCache.get(sentence);
     textEl.classList.remove('ydh-sub-loading');
@@ -1244,7 +1220,7 @@ function showSubBar(sentence, anchorRect, isDual = false) {
   updateSubBarPosition(subBar, anchorRect, container);
   subBar.classList.add('ydh-sub-visible');
 
-  // 4. Direct sentence translation (Google Translate fallback)
+  // 4. Fallback to Google Translate / Gemini
   getSentenceTranslation(sentence).then((tr) => {
     if (currentSubSentence === sentence && subBar) {
       textEl.textContent = tr || sentence;
@@ -1610,23 +1586,11 @@ window.addEventListener('contextmenu', (e) => {
 // ── Subtitle-by-Subtitle Navigation Engine (A / D / S keys) ─────────────────
 let observedHistoryCues = [];
 let navToastTimeout = null;
-let currentActiveCue = null; // { text, start, end }
-let lastFinishedCue = null;
 
 function trackActiveCue(text, currentTime) {
   if (!text || typeof currentTime !== 'number') return;
   const clean = text.replace(/\s+/g, ' ').trim();
   if (!clean || clean.length < 2) return;
-
-  if (!currentActiveCue || currentActiveCue.text !== clean) {
-    if (currentActiveCue) {
-      currentActiveCue.end = currentTime;
-      lastFinishedCue = Object.assign({}, currentActiveCue);
-    }
-    currentActiveCue = { text: clean, start: currentTime, end: currentTime + 3.2 };
-  } else {
-    currentActiveCue.end = Math.max(currentActiveCue.end, currentTime + 0.5);
-  }
   recordObservedCue(clean, currentTime);
 }
 
@@ -1669,6 +1633,10 @@ function getAllSubtitleCues(video) {
         }
       }
     }
+  }
+  // 3. Fallback to official intercepted Turkish cues if source was tagged tr
+  if (officialTurkishCues && officialTurkishCues.length > 0) {
+    return officialTurkishCues;
   }
   // 4. Observed DOM history cues
   if (observedHistoryCues && observedHistoryCues.length > 0) {
@@ -1718,7 +1686,6 @@ function showNavToast(message) {
   }, 1200);
 }
 
-
 function closePrimeVideoAudioPanel() {
   try {
     const dialogs = document.querySelectorAll(`
@@ -1757,7 +1724,7 @@ function handleNavKey(key) {
   if (now - lastNavKeyTime < 180) return;
   lastNavKeyTime = now;
 
-  // Reset subtitle state before seek so stale cached sentence doesn't reappear
+  // Reset subtitle state before seek so stale cached sentence doesn't linger
   currentSubSentence = '';
   if (subBar) {
     subBar.classList.remove('ydh-sub-visible');
@@ -1779,11 +1746,15 @@ function jumpToPreviousSubtitle() {
 
   checkVideoEpisodeChange(video);
   const now = video.currentTime;
-  const cues = getAllSubtitleCues(video);
+  let cues = getAllSubtitleCues(video);
+  if (!cues || cues.length === 0) {
+    tryLoadSubtitlesFromPerformanceResources();
+    cues = getAllSubtitleCues(video);
+  }
 
   if (cues && cues.length > 0) {
-    // 1. Check if we are currently inside a cue
-    const currentCueIndex = cues.findIndex(c => (c.start - 0.1) <= now && now <= (c.end + 0.2));
+    // 1. Check if currently inside a cue
+    const currentCueIndex = cues.findIndex(c => (c.start - 0.2) <= now && now <= (c.end + 0.2));
 
     if (currentCueIndex > 0) {
       // Step strictly to previous cue
@@ -1792,14 +1763,14 @@ function jumpToPreviousSubtitle() {
       showNavToast(`⏮ ${prevCue.text}`);
       return;
     } else if (currentCueIndex === 0) {
-      // In the first known cue: rewind 2.0s! NEVER act like S repeat
-      seekVideoToTime(video, Math.max(0, now - 2.0));
-      showNavToast(`⏮ -2s`);
+      // Very first cue of the video
+      seekVideoToTime(video, Math.max(0, cues[0].start));
+      showNavToast(`⏮ ${cues[0].text}`);
       return;
     }
 
-    // 2. Between cues: find the last cue that ended before now
-    const pastCues = cues.filter(c => c.end <= (now + 0.1));
+    // 2. Between cues: find the immediate last cue that started before now
+    const pastCues = cues.filter(c => c.start < (now - 0.2));
     if (pastCues.length > 0) {
       const prevCue = pastCues[pastCues.length - 1];
       seekVideoToTime(video, prevCue.start);
@@ -1808,9 +1779,9 @@ function jumpToPreviousSubtitle() {
     }
   }
 
-  // Fallback if no cues: rewind 2.0 seconds
-  seekVideoToTime(video, Math.max(0, now - 2.0));
-  showNavToast(`⏮ -2s`);
+  // Fallback if no cues: rewind 3.0s
+  seekVideoToTime(video, Math.max(0, now - 3.0));
+  showNavToast(`⏮ -3s`);
 }
 
 function jumpToNextSubtitle() {
@@ -1820,21 +1791,28 @@ function jumpToNextSubtitle() {
 
   checkVideoEpisodeChange(video);
   const now = video.currentTime;
-  const cues = getAllSubtitleCues(video);
+  let cues = getAllSubtitleCues(video);
+  if (!cues || cues.length === 0) {
+    tryLoadSubtitlesFromPerformanceResources();
+    cues = getAllSubtitleCues(video);
+  }
 
   if (cues && cues.length > 0) {
-    // Find the next cue starting strictly after now + 0.25s
+    // Find next cue starting strictly after now + 0.25s
     const nextCue = cues.find(c => c.start > (now + 0.25));
-    if (nextCue && (nextCue.start - now) <= 300) {
+    if (nextCue) {
       seekVideoToTime(video, nextCue.start);
       showNavToast(`⏭ ${nextCue.text}`);
+      return;
+    } else {
+      showNavToast('⏭ Son altyazı');
       return;
     }
   }
 
-  // Fallback: jump 2.0 seconds forward (NEVER freeze)
-  seekVideoToTime(video, now + 2.0);
-  showNavToast(`⏭ +2s`);
+  // Fallback: jump 3.0s forward
+  seekVideoToTime(video, now + 3.0);
+  showNavToast(`⏭ +3s`);
 }
 
 function repeatCurrentSubtitle() {
@@ -1844,53 +1822,50 @@ function repeatCurrentSubtitle() {
 
   checkVideoEpisodeChange(video);
   const now = video.currentTime;
-  const cues = getAllSubtitleCues(video);
+  let cues = getAllSubtitleCues(video);
+  if (!cues || cues.length === 0) {
+    tryLoadSubtitlesFromPerformanceResources();
+    cues = getAllSubtitleCues(video);
+  }
 
   // 1. Search official/preloaded cues FIRST (exact cue.start)
   if (cues && cues.length > 0) {
-    const currentCue = cues.find(c => (c.start - 0.1) <= now && now <= (c.end + 0.3));
+    const currentCue = cues.find(c => (c.start - 0.2) <= now && now <= (c.end + 0.3));
     if (currentCue) {
       seekVideoToTime(video, currentCue.start);
       showNavToast(`🔁 ${currentCue.text}`);
       return;
     }
 
-    // Cue that ended within the last 3.0 seconds
-    const recentCues = cues.filter(c => c.start <= now && (now - c.end) < 3.0);
+    // Cue that ended within the last 3.5 seconds
+    const recentCues = cues.filter(c => c.start <= now && (now - c.end) < 3.5);
     if (recentCues.length > 0) {
       const target = recentCues[recentCues.length - 1];
       seekVideoToTime(video, target.start);
       showNavToast(`🔁 ${target.text}`);
       return;
     }
-  }
 
-  // 2. Active DOM subtitle fallback (if preloaded cues weren't loaded yet)
-  const activeDomCue = findActiveSubtitleCue();
-  if (activeDomCue && activeDomCue.text) {
-    trackActiveCue(activeDomCue.text, now);
-    if (currentActiveCue && currentActiveCue.start <= now) {
-      seekVideoToTime(video, currentActiveCue.start);
-      showNavToast(`🔁 ${activeDomCue.text}`);
+    // Fallback: most recent cue
+    const pastCues = cues.filter(c => c.start <= now);
+    if (pastCues.length > 0) {
+      const target = pastCues[pastCues.length - 1];
+      seekVideoToTime(video, target.start);
+      showNavToast(`🔁 ${target.text}`);
       return;
     }
   }
 
-  // 3. Fallback: recently tracked active or finished cue
-  if (currentActiveCue && (now - currentActiveCue.start) <= 20) {
-    seekVideoToTime(video, currentActiveCue.start);
-    showNavToast(`🔁 ${currentActiveCue.text}`);
-    return;
-  }
-  if (lastFinishedCue && (now - lastFinishedCue.end) < 3.5) {
-    seekVideoToTime(video, lastFinishedCue.start);
-    showNavToast(`🔁 ${lastFinishedCue.text}`);
+  // 2. Active DOM subtitle fallback
+  const activeDomCue = findActiveSubtitleCue();
+  if (activeDomCue && activeDomCue.text) {
+    showNavToast(`🔁 ${activeDomCue.text}`);
     return;
   }
 
-  // 4. Fallback if no cues: rewind 2.0 seconds
-  seekVideoToTime(video, Math.max(0, now - 2.0));
-  showNavToast(`🔁 -2s`);
+  // 3. Fallback if no cues: rewind 3.0 seconds
+  seekVideoToTime(video, Math.max(0, now - 3.0));
+  showNavToast(`🔁 -3s`);
 }
 
 // ── Floating On-Screen Navigation Controls (Left Screen Pill Dock) ───────────
@@ -2530,7 +2505,10 @@ function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Initialize styles and navigation controls on load
+// Initialize styles, navigation controls, and proactive performance resource lookup on load
 injectStyles();
 ensureNavControls();
 setInterval(ensureNavControls, 2000);
+tryLoadSubtitlesFromPerformanceResources();
+setTimeout(tryLoadSubtitlesFromPerformanceResources, 1500);
+setTimeout(tryLoadSubtitlesFromPerformanceResources, 4000);
