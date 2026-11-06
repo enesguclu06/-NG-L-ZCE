@@ -7,6 +7,26 @@
   if (window.__ydh_interceptor_loaded) return;
   window.__ydh_interceptor_loaded = true;
 
+  // Safe DOM mutation protective shim for React / third-party video players
+  try {
+    const origRemoveChild = Node.prototype.removeChild;
+    Node.prototype.removeChild = function(child) {
+      if (child && child.parentNode !== this) {
+        return child;
+      }
+      return origRemoveChild.apply(this, arguments);
+    };
+    const origInsertBefore = Node.prototype.insertBefore;
+    Node.prototype.insertBefore = function(newNode, referenceNode) {
+      if (referenceNode && referenceNode.parentNode !== this) {
+        return this.appendChild(newNode);
+      }
+      return origInsertBefore.apply(this, arguments);
+    };
+  } catch (e) {}
+
+  const origFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : null;
+
   function parseTimeSeconds(timeStr) {
     if (!timeStr) return 0;
     const str = String(timeStr).trim();
@@ -182,6 +202,7 @@
       urlLower.includes('lang=tr') ||
       urlLower.includes('language=tr') ||
       urlLower.includes('language=turkish') ||
+      urlLower.includes('language=tur') ||
       urlLower.includes('srclang=tr') ||
       urlLower.includes('.tur.vtt') ||
       urlLower.includes('_tur.vtt') ||
@@ -193,14 +214,23 @@
     }
     // Content-based language detection (TTML/VTT root header only)
     if (text && typeof text === 'string') {
-      const head = text.slice(0, 1000).toLowerCase();
+      const head = text.slice(0, 4000).toLowerCase();
       if (
         head.includes('xml:lang="tr') ||
         head.includes("xml:lang='tr") ||
+        head.includes('xml:lang="tur') ||
+        head.includes("xml:lang='tur") ||
         head.includes('lang="tr') ||
         head.includes("lang='tr") ||
-        head.includes('language: tr')
+        head.includes('lang="tur') ||
+        head.includes("lang='tur") ||
+        head.includes('language: tr') ||
+        head.includes('language: turkish')
       ) {
+        return 'tr';
+      }
+      // Content text detection: Turkish-specific characters that never appear in English subtitles
+      if (/[çğıöşüÇĞİÖŞÜ]/.test(text.slice(0, 8000))) {
         return 'tr';
       }
     }
@@ -286,7 +316,8 @@
         if (fullUrl === lastFetchedTrSubtitleUrl) continue;
         lastFetchedTrSubtitleUrl = fullUrl;
 
-        fetch(fullUrl)
+        const fetchFn = origFetch || fetch;
+        fetchFn(fullUrl)
           .then(r => r.text())
           .then(text => {
             if (text && text.length > 50) {
@@ -353,8 +384,7 @@
   }
 
   // 1. Hook window.fetch
-  if (typeof window.fetch === 'function') {
-    const origFetch = window.fetch;
+  if (origFetch) {
     window.fetch = async function(...args) {
       const res = await origFetch.apply(this, args);
       try {
@@ -456,9 +486,10 @@
       if (e.code === 'KeyA') key = 'a';
       else if (e.code === 'KeyD') key = 'd';
       else if (e.code === 'KeyS') key = 's';
+      else if (e.code === 'KeyW') key = 'w';
     }
 
-    if (key === 'a' || key === 'd' || key === 's') {
+    if (key === 'a' || key === 'd' || key === 's' || key === 'w') {
       const hasVideo = document.querySelector('video') || document.getElementById('movie_player')?.querySelector('video');
       if (hasVideo) {
         e.preventDefault();

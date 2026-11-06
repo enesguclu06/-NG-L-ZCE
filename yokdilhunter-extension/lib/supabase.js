@@ -132,3 +132,25 @@ export async function getRecentWords(limit = 5) {
 
   return data;
 }
+
+export async function getAllUserWords() {
+  const session = await getSession();
+  if (!session) return [];
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/words?user_id=eq.${session.user.id}&select=id,english_word,turkish_translation,difficulty,definition&limit=10000`, {
+      method: 'GET',
+      headers: await getHeaders(true)
+    });
+    if (!res.ok) {
+      console.warn('Failed to fetch all user words:', res.status, res.statusText);
+      return [];
+    }
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.error('Error fetching all user words:', err);
+    return [];
+  }
+}
+

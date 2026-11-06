@@ -6,7 +6,12 @@ import { AiSettingsModal } from './AiSettingsModal'
 import { NotificationModal } from '../notifications/NotificationModal'
 import { getGeminiApiKey } from '../../lib/api'
 import { useStreak } from '../../hooks/useStreak'
-import { StreakModal, StreakCelebrationModal } from '../streak/StreakModal'
+import {
+  StreakModal,
+  StreakCelebrationModal,
+  StreakShieldUsedModal,
+  StreakLostModal
+} from '../streak/StreakModal'
 
 export function Layout({ children }) {
   const { signOut, user } = useAuth()
@@ -130,6 +135,20 @@ export function Layout({ children }) {
         isOpen={streak.justCompletedModal}
         onClose={streak.closeCelebration}
         currentStreak={streak.currentStreak}
+      />
+
+      {/* ── Streak Shield Used Modal (Automatic on Site Open) ── */}
+      <StreakShieldUsedModal
+        isOpen={!!streak.freezeUsedNotice}
+        onClose={streak.dismissNotice}
+        currentStreak={streak.currentStreak}
+      />
+
+      {/* ── Streak Lost / Reset Modal (Automatic on Site Open) ── */}
+      <StreakLostModal
+        isOpen={!!streak.streakLostNotice}
+        onClose={streak.dismissLostNotice}
+        lostStreak={streak.lostStreakCount}
       />
 
       {/* ── Bottom Nav ── */}

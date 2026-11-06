@@ -43,7 +43,9 @@ function getInitialState() {
     bestStreak: 0,
     lastCompletedDate: null,
     lastFreezeUsedAt: null,
-    freezeUsedNotice: false, // Flag to show "Serini kurtardık!" message
+    freezeUsedNotice: false, // Flag to show "Kalkan kullanıldı" modal
+    streakLostNotice: false, // Flag to show "Giriş serin sıfırlandı" modal
+    lostStreakCount: 0,      // Number of streak days lost
   }
 }
 
@@ -79,6 +81,12 @@ export function getStreakData(userId = null) {
     stateChanged = true
   }
 
+  // Safety: If current streak is 0, clear any freeze cooldown so user doesn't waste their 14-day shield
+  if ((!state.currentStreak || state.currentStreak === 0) && state.lastFreezeUsedAt) {
+    state.lastFreezeUsedAt = null
+    stateChanged = true
+  }
+
   // 2. Streak evaluation (has user broken the chain?)
   if (state.lastCompletedDate) {
     const daysSinceCompleted = getDaysDiff(state.lastCompletedDate, today)
@@ -94,18 +102,25 @@ export function getStreakData(userId = null) {
         state.lastFreezeUsedAt = Date.now()
         state.lastCompletedDate = yesterday // Treat yesterday as saved
         state.freezeUsedNotice = true
+        state.streakLostNotice = false
         stateChanged = true
       } else {
         // Freeze not available or streak was 0
         if (state.currentStreak > 0) {
+          state.lostStreakCount = state.currentStreak
           state.currentStreak = 0
+          state.streakLostNotice = true
+          state.freezeUsedNotice = false
           stateChanged = true
         }
       }
     } else if (daysSinceCompleted > 2) {
       // 2 or more consecutive days missed -> streak lost
       if (state.currentStreak > 0) {
+        state.lostStreakCount = state.currentStreak
         state.currentStreak = 0
+        state.streakLostNotice = true
+        state.freezeUsedNotice = false
         stateChanged = true
       }
     }
@@ -122,6 +137,9 @@ export function getStreakData(userId = null) {
 
   if (stateChanged) {
     saveStreakState(key, state)
+    if (userId) {
+      syncStreakToCloud(userId, state)
+    }
   }
 
   return {
@@ -162,6 +180,9 @@ export async function syncStreakToCloud(userId, state) {
     bestStreak: state.bestStreak || 0,
     lastCompletedDate: state.lastCompletedDate || null,
     lastFreezeUsedAt: state.lastFreezeUsedAt || null,
+    freezeUsedNotice: !!state.freezeUsedNotice,
+    streakLostNotice: !!state.streakLostNotice,
+    lostStreakCount: state.lostStreakCount || 0,
   }
   const payloadStr = `${userId}:${JSON.stringify(payload)}`
   if (lastSyncedJson === payloadStr) {
@@ -223,6 +244,14 @@ export function mergeCloudStreak(userId, cloudState) {
     merged.lastFreezeUsedAt = Math.max(local.lastFreezeUsedAt || 0, cloudState.lastFreezeUsedAt)
   }
 
+  if (cloudState.freezeUsedNotice !== undefined) {
+    merged.freezeUsedNotice = cloudState.freezeUsedNotice
+  }
+  if (cloudState.streakLostNotice !== undefined) {
+    merged.streakLostNotice = cloudState.streakLostNotice
+    merged.lostStreakCount = cloudState.lostStreakCount || 0
+  }
+
   // Check if anything actually changed before saving and dispatching
   const hasChanged =
     local.todayDate !== merged.todayDate ||
@@ -231,6 +260,8 @@ export function mergeCloudStreak(userId, cloudState) {
     local.bestStreak !== merged.bestStreak ||
     local.lastCompletedDate !== merged.lastCompletedDate ||
     local.lastFreezeUsedAt !== merged.lastFreezeUsedAt ||
+    local.freezeUsedNotice !== merged.freezeUsedNotice ||
+    local.streakLostNotice !== merged.streakLostNotice ||
     (local.todayWordIds || []).length !== (merged.todayWordIds || []).length
 
   if (!hasChanged) {
@@ -396,3 +427,18 @@ export function dismissFreezeNotice(userId = null) {
   }
   window.dispatchEvent(new CustomEvent('yokdil_streak_updated', { detail: updated }))
 }
+
+/**
+ * Clear the "streak lost" notification modal once user sees it.
+ */
+export function dismissStreakLostNotice(userId = null) {
+  const key = getStorageKey(userId)
+  const current = getStreakData(userId)
+  const updated = { ...current, streakLostNotice: false, lostStreakCount: 0 }
+  saveStreakState(key, updated)
+  if (userId) {
+    syncStreakToCloud(userId, updated)
+  }
+  window.dispatchEvent(new CustomEvent('yokdil_streak_updated', { detail: updated }))
+}
+

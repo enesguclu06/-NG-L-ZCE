@@ -5,6 +5,7 @@ import {
   getStreakData,
   recordReviewForStreak,
   dismissFreezeNotice,
+  dismissStreakLostNotice,
   mergeCloudStreak,
   syncStreakToCloud,
   syncStreakWithWords,
@@ -114,6 +115,11 @@ export function useStreak() {
     refreshStreak()
   }, [userId, refreshStreak])
 
+  const dismissLostNotice = useCallback(() => {
+    dismissStreakLostNotice(userId)
+    refreshStreak()
+  }, [userId, refreshStreak])
+
   const closeCelebration = useCallback(() => {
     setJustCompletedModal(false)
   }, [])
@@ -123,6 +129,7 @@ export function useStreak() {
     target: DAILY_STREAK_TARGET,
     refreshStreak,
     dismissNotice,
+    dismissLostNotice,
     justCompletedModal,
     closeCelebration,
   }

@@ -769,6 +769,7 @@ function getSubBar() {
 // ── Hover Auto-Pause & Resume Engine ─────────────────────────────────────────
 let autoPausedByHover = false;
 let pausedVideoRef = null;
+let wKeyHoverActive = false;
 
 function pauseVideoForSubtitleHover(x, y) {
   if (activeSubtitleMode !== 'hover') return;
@@ -783,6 +784,7 @@ function pauseVideoForSubtitleHover(x, y) {
     const onManualPlay = () => {
       autoPausedByHover = false;
       pausedVideoRef = null;
+      wKeyHoverActive = false;
     };
     video.addEventListener('play', onManualPlay, { once: true });
 
@@ -797,18 +799,20 @@ function pauseVideoForSubtitleHover(x, y) {
 }
 
 function resumeVideoAfterSubtitleHover() {
-  if (!autoPausedByHover) return;
+  if (!autoPausedByHover && !wKeyHoverActive) return;
 
   // Don't resume if word translation card is open
   if (tooltip && tooltip.classList.contains('ydh-visible')) {
     autoPausedByHover = false;
     pausedVideoRef = null;
+    wKeyHoverActive = false;
     return;
   }
 
-  const v = pausedVideoRef;
+  const v = pausedVideoRef || document.querySelector('video');
   autoPausedByHover = false;
   pausedVideoRef = null;
+  wKeyHoverActive = false;
 
   if (v) {
     try {
@@ -833,8 +837,85 @@ function hideSubBar() {
     subBar.classList.remove('ydh-sub-visible');
     currentSubSentence = '';
   }
-  if (activeSubtitleMode === 'hover') {
+  if (activeSubtitleMode === 'hover' || wKeyHoverActive) {
     resumeVideoAfterSubtitleHover();
+  }
+}
+
+function toggleHoverSubtitleByKey() {
+  closePrimeVideoAudioPanel();
+  const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2) || document.querySelector('video');
+  if (!video) return;
+
+  // Toggle OFF if already active (hides bar and resumes video playback)
+  const isShowingHover = (wKeyHoverActive || autoPausedByHover) && subBar && subBar.classList.contains('ydh-sub-visible');
+  if (isShowingHover) {
+    wKeyHoverActive = false;
+    hideSubBar();
+    return;
+  }
+
+  // Toggle ON:
+  // 1. Locate current active sentence from DOM or preloaded cues
+  let activeSub = findActiveSubtitleCue();
+  let sentence = activeSub?.text || '';
+  let anchorRect = activeSub?.rect || null;
+
+  const now = video.currentTime;
+  const cues = getAllSubtitleCues(video);
+
+  if (!sentence && cues && cues.length > 0) {
+    const cue = cues.find(c => (c.start - 0.25) <= now && now <= (c.end + 0.35)) ||
+                cues.filter(c => c.start <= now && (now - c.end) < 3.5).pop();
+    if (cue) {
+      sentence = cue.text;
+    }
+  }
+
+  const vRect = video.getBoundingClientRect();
+  if (!anchorRect) {
+    anchorRect = {
+      top: vRect.bottom - 95,
+      bottom: vRect.bottom - 45,
+      left: vRect.left + vRect.width * 0.15,
+      right: vRect.left + vRect.width * 0.85,
+      width: vRect.width * 0.7,
+      height: 50
+    };
+  }
+
+  // Pause the video if currently playing
+  if (!video.paused) {
+    autoPausedByHover = true;
+    pausedVideoRef = video;
+    try { video.pause(); } catch {}
+
+    const onManualPlay = () => {
+      wKeyHoverActive = false;
+      autoPausedByHover = false;
+      pausedVideoRef = null;
+      if (activeSubtitleMode === 'hover') {
+        hideSubBar();
+      }
+    };
+    video.addEventListener('play', onManualPlay, { once: true });
+
+    // YouTube specific
+    try {
+      const mp = document.getElementById('movie_player');
+      if (mp && typeof mp.pauseVideo === 'function') {
+        mp.pauseVideo();
+      }
+    } catch {}
+  } else {
+    autoPausedByHover = true;
+    pausedVideoRef = video;
+  }
+
+  wKeyHoverActive = true;
+
+  if (sentence) {
+    showSubBar(sentence, anchorRect, false);
   }
 }
 
@@ -891,14 +972,14 @@ function cleanAndMergeCues(rawCues) {
     if (!cue || !cue.text) continue;
     const cleanText = cue.text.replace(/\s+/g, ' ').trim();
     if (cleanText.length < 2) continue;
-    // Ignore sound-effect-only cues (e.g. [MUSIC], ♪)
+    // Ignore sound-effect-only cues (e.g. [MUSIC], [MÜZİK], ♪, [GÜLÜŞMELER])
     if (/^(\[[^\]]+\]|\([^)]+\)|[♪\s]+)$/.test(cleanText)) continue;
     if (merged.length === 0) {
       merged.push({ start: cue.start, end: cue.end, text: cleanText });
       continue;
     }
     const last = merged[merged.length - 1];
-    // Merge if cues share the exact/nearby start time (multi-line subtitle on Prime Video / Netflix)
+    // Merge only if cues share the exact/nearby start time (multi-line subtitle on Prime Video / Netflix)
     if (Math.abs(cue.start - last.start) <= 0.35) {
       if (!last.text.includes(cleanText)) {
         last.text = `${last.text} ${cleanText}`.trim();
@@ -916,6 +997,7 @@ function cleanAndMergeCues(rawCues) {
 // ── Lookahead Subtitle Cues & Official Turkish Tracks (0ms Zero-Latency Engine) ──
 let preloadedSourceCues = [];
 let officialTurkishCues = [];
+let lastObservedSubtitleLanguage = 'en';
 let lastPreWarmTime = -1;
 let lastNavKeyTime = 0;
 
@@ -1096,6 +1178,7 @@ function syncAndPrewarmVideos() {
       v._ydhBound = true;
       v.addEventListener('timeupdate', () => {
         checkVideoEpisodeChange(v);
+        highlightVocabInActiveSubtitles();
         const liveSub = findActiveSubtitleCue();
         if (liveSub?.text) trackActiveCue(liveSub.text, v.currentTime);
 
@@ -1109,6 +1192,7 @@ function syncAndPrewarmVideos() {
       });
       v.addEventListener('seeked', () => {
         checkVideoEpisodeChange(v);
+        highlightVocabInActiveSubtitles();
         const liveSub = findActiveSubtitleCue();
         if (liveSub?.text) trackActiveCue(liveSub.text, v.currentTime);
 
@@ -1177,7 +1261,7 @@ function syncAndPrewarmVideos() {
 }
 
 function showSubBar(sentence, anchorRect, isDual = false) {
-  if (!sentence || activeSubtitleMode === 'off') {
+  if (!sentence || (activeSubtitleMode === 'off' && !wKeyHoverActive)) {
     hideSubBar();
     return;
   }
@@ -1231,6 +1315,227 @@ function showSubBar(sentence, anchorRect, isDual = false) {
   });
 }
 
+// ── User Vocabulary Library Subtitle Highlighting Engine ────────────────────
+let userVocabMap = new Map();
+let userVocabPhrases = []; // Multi-word phrases sorted by length descending
+
+function buildVocabMap(vocabList) {
+  if (!Array.isArray(vocabList)) return;
+  userVocabMap.clear();
+  userVocabPhrases = [];
+
+  for (const item of vocabList) {
+    if (!item || !item.english_word) continue;
+    const baseWord = item.english_word.trim().toLowerCase();
+    if (!baseWord) continue;
+
+    const entry = {
+      word: item.english_word.trim(),
+      difficulty: item.difficulty || 'unrated',
+      translation: item.turkish_translation || '',
+      definition: item.definition || ''
+    };
+
+    if (baseWord.includes(' ')) {
+      userVocabPhrases.push({ phrase: baseWord, entry });
+    } else {
+      userVocabMap.set(baseWord, entry);
+
+      // Common English regular inflections
+      if (baseWord.endsWith('s') || baseWord.endsWith('x') || baseWord.endsWith('z') || baseWord.endsWith('ch') || baseWord.endsWith('sh')) {
+        if (!userVocabMap.has(baseWord + 'es')) userVocabMap.set(baseWord + 'es', entry);
+      } else if (baseWord.endsWith('y') && !/[aeiou]y$/i.test(baseWord)) {
+        if (!userVocabMap.has(baseWord.slice(0, -1) + 'ies')) userVocabMap.set(baseWord.slice(0, -1) + 'ies', entry);
+        if (!userVocabMap.has(baseWord.slice(0, -1) + 'ied')) userVocabMap.set(baseWord.slice(0, -1) + 'ied', entry);
+      } else {
+        if (!userVocabMap.has(baseWord + 's')) userVocabMap.set(baseWord + 's', entry);
+      }
+
+      if (baseWord.endsWith('e')) {
+        if (!userVocabMap.has(baseWord + 'd')) userVocabMap.set(baseWord + 'd', entry);
+        if (!userVocabMap.has(baseWord.slice(0, -1) + 'ing')) userVocabMap.set(baseWord.slice(0, -1) + 'ing', entry);
+      } else {
+        if (!userVocabMap.has(baseWord + 'ed')) userVocabMap.set(baseWord + 'ed', entry);
+        if (!userVocabMap.has(baseWord + 'ing')) userVocabMap.set(baseWord + 'ing', entry);
+        if (baseWord.length >= 3 && /[^aeiou][aeiou][b-df-hj-np-tv-z]$/i.test(baseWord)) {
+          const lastChar = baseWord[baseWord.length - 1];
+          if (!userVocabMap.has(baseWord + lastChar + 'ing')) userVocabMap.set(baseWord + lastChar + 'ing', entry);
+          if (!userVocabMap.has(baseWord + lastChar + 'ed')) userVocabMap.set(baseWord + lastChar + 'ed', entry);
+        }
+      }
+    }
+  }
+
+  if (userVocabPhrases.length > 0) {
+    userVocabPhrases.sort((a, b) => b.phrase.length - a.phrase.length);
+  }
+}
+
+function loadUserVocabFromStorage() {
+  if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+  chrome.storage.local.get('ydh_user_vocab', (res) => {
+    if (res?.ydh_user_vocab) {
+      buildVocabMap(res.ydh_user_vocab);
+      highlightVocabInActiveSubtitles();
+    }
+  });
+
+  try {
+    chrome.runtime.sendMessage({ action: 'get_user_vocab' }, (response) => {
+      if (chrome.runtime.lastError) return;
+      if (response?.vocab) {
+        buildVocabMap(response.vocab);
+        highlightVocabInActiveSubtitles();
+      }
+    });
+  } catch {}
+}
+
+if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.ydh_user_vocab?.newValue) {
+      buildVocabMap(changes.ydh_user_vocab.newValue);
+      highlightVocabInActiveSubtitles();
+    }
+  });
+}
+
+function highlightVocabInActiveSubtitles() {
+  if (userVocabMap.size === 0 && userVocabPhrases.length === 0) return;
+
+  const selector = SUBTITLE_SELECTORS.join(',');
+  const elements = document.querySelectorAll(selector);
+  if (!elements || elements.length === 0) return;
+
+  for (const el of elements) {
+    if (!el || !el.isConnected) continue;
+    if (el.classList.contains('ydh-vocab-word') || el.closest('.ydh-vocab-word')) continue;
+    if (el.id === 'ydh-sub-translation-bar' || el.closest('#ydh-sub-translation-bar')) continue;
+    if (el.id === 'ydh-tooltip' || el.closest('#ydh-tooltip')) continue;
+
+    const fullText = el.textContent || '';
+    if (fullText.trim().length < 2) continue;
+
+    // Fast skip: content already scanned and contains highlighted words
+    if (el.dataset.ydhVocabText === fullText && el.querySelector('.ydh-vocab-word')) continue;
+
+    highlightElementTextNodes(el);
+    el.dataset.ydhVocabText = el.textContent || '';
+  }
+}
+
+function highlightElementTextNodes(container) {
+  const childSub = container.querySelector(SUBTITLE_SELECTORS.join(','));
+  if (childSub) return;
+
+  const textNodes = [];
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+  let n;
+  while ((n = walker.nextNode())) {
+    if (n.nodeValue && n.nodeValue.trim().length > 0) {
+      if (n.parentElement && n.parentElement.classList.contains('ydh-vocab-word')) continue;
+      textNodes.push(n);
+    }
+  }
+
+  if (textNodes.length === 0) return;
+
+  const wordRegex = /\b([a-zA-Z0-9'-]+)\b/g;
+
+  for (const textNode of textNodes) {
+    const text = textNode.nodeValue;
+    if (!text || text.trim().length < 2) continue;
+
+    const matches = [];
+
+    // 1. Multi-word phrase matching
+    if (userVocabPhrases.length > 0) {
+      const lower = text.toLowerCase();
+      for (const p of userVocabPhrases) {
+        let pIdx = lower.indexOf(p.phrase);
+        while (pIdx !== -1) {
+          const pEnd = pIdx + p.phrase.length;
+          const beforeOk = (pIdx === 0 || !/[a-zA-Z0-9]/.test(text[pIdx - 1]));
+          const afterOk = (pEnd === text.length || !/[a-zA-Z0-9]/.test(text[pEnd]));
+          if (beforeOk && afterOk) {
+            const overlaps = matches.some(m => Math.max(m.start, pIdx) < Math.min(m.end, pEnd));
+            if (!overlaps) {
+              matches.push({
+                start: pIdx,
+                end: pEnd,
+                raw: text.slice(pIdx, pEnd),
+                entry: p.entry
+              });
+            }
+          }
+          pIdx = lower.indexOf(p.phrase, pEnd);
+        }
+      }
+    }
+
+    // 2. Single word matching
+    wordRegex.lastIndex = 0;
+    let m;
+    while ((m = wordRegex.exec(text)) !== null) {
+      const start = m.index;
+      const end = m.index + m[0].length;
+      const overlaps = matches.some(item => Math.max(item.start, start) < Math.min(item.end, end));
+      if (overlaps) continue;
+
+      const rawWord = m[0];
+      const cleanWord = rawWord.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase();
+      if (cleanWord.length >= 2 && userVocabMap.has(cleanWord)) {
+        matches.push({
+          start,
+          end,
+          raw: rawWord,
+          entry: userVocabMap.get(cleanWord)
+        });
+      }
+    }
+
+    if (matches.length === 0) continue;
+
+    matches.sort((a, b) => a.start - b.start);
+
+    const frag = document.createDocumentFragment();
+    let cur = 0;
+
+    for (const match of matches) {
+      if (match.start > cur) {
+        frag.appendChild(document.createTextNode(text.slice(cur, match.start)));
+      }
+
+      const span = document.createElement('span');
+      const diff = match.entry.difficulty || 'unrated';
+      span.className = `ydh-vocab-word ydh-vocab-${diff}`;
+      span.dataset.word = match.entry.word;
+      span.dataset.difficulty = diff;
+      span.dataset.translation = match.entry.translation || '';
+
+      const diffLabel = (diff === 'easy' || diff === 'mastered') ? '🟢 Kolay' :
+                        diff === 'medium' ? '🟡 Orta' :
+                        diff === 'hard' ? '🔴 Zor' : '🔵 Yeni';
+
+      const tipText = `${match.entry.word}: ${match.entry.translation || 'Çeviri yok'} [${diffLabel}]`;
+      span.setAttribute('data-ydh-tip', tipText);
+      span.title = tipText;
+      span.textContent = match.raw;
+
+      frag.appendChild(span);
+      cur = match.end;
+    }
+
+    if (cur < text.length) {
+      frag.appendChild(document.createTextNode(text.slice(cur)));
+    }
+
+    try {
+      textNode.parentNode?.replaceChild(frag, textNode);
+    } catch {}
+  }
+}
+
 // ── Real-time MutationObserver (0ms Instant Subtitle Detection) ─────────────
 let subObserver = null;
 
@@ -1249,6 +1554,7 @@ function setupSubtitleObserver() {
 
   try {
     subObserver = new MutationObserver(() => {
+      highlightVocabInActiveSubtitles();
       if (activeSubtitleMode === 'dual') {
         scanAndShowDualSubtitle();
       } else if (activeSubtitleMode === 'hover') {
@@ -1295,8 +1601,12 @@ function handleSubtitleModeChange() {
       preWarmCurrentOnScreenCue();
     }, 200);
   } else {
-    teardownSubtitleObserver();
     hideSubBar();
+    if (userVocabMap.size > 0 || userVocabPhrases.length > 0) {
+      setupSubtitleObserver();
+    } else {
+      teardownSubtitleObserver();
+    }
   }
 }
 
@@ -1400,8 +1710,9 @@ window.addEventListener('mousemove', (e) => {
     return;
   }
 
-  // If moved outside subtitle zone, gracefully hide after 350ms
+  // If moved outside subtitle zone, gracefully hide after 350ms (unless held open by W key)
   if (!hoverHideTimeout && subBar && subBar.classList.contains('ydh-sub-visible')) {
+    if (wKeyHoverActive) return;
     hoverHideTimeout = setTimeout(() => {
       hideSubBar();
       hoverHideTimeout = null;
@@ -1410,6 +1721,7 @@ window.addEventListener('mousemove', (e) => {
 }, { passive: true });
 
 document.addEventListener('mouseleave', () => {
+  if (wKeyHoverActive) return;
   if (activeSubtitleMode === 'hover' && subBar && subBar.classList.contains('ydh-sub-visible')) {
     hideSubBar();
   }
@@ -1532,11 +1844,45 @@ window.addEventListener('mouseup', (e) => {
   if (e.button === 1) handleMiddleClick(e);
 }, true);
 
-// ── Alt + Left Click (Button 0): Alternative for Trackpads / Laptops ─────────
+// ── Direct Click on Highlighted Word / Alt + Left Click ──────────────
 window.addEventListener('click', (e) => {
   // If clicked inside our tooltip, let tooltip buttons handle it
   if (tooltip && tooltip.contains(e.target)) return;
   if (isPlayerControlOrUI(e.target)) return;
+
+  // Direct click on a highlighted vocabulary word: pause video & open word details card
+  const vocabSpan = e.target.closest?.('.ydh-vocab-word');
+  if (vocabSpan && e.button === 0) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation?.();
+
+    const video = findAssociatedVideo(e.clientX, e.clientY) || document.querySelector('video');
+    if (video) {
+      try { video.pause(); } catch {}
+      const keepPaused = () => {
+        if (tooltip && tooltip.classList.contains('ydh-visible')) {
+          try { video.pause(); } catch {}
+        } else {
+          video.removeEventListener('play', keepPaused);
+        }
+      };
+      video.addEventListener('play', keepPaused);
+    }
+    try {
+      const mp = document.getElementById('movie_player');
+      if (mp && typeof mp.pauseVideo === 'function') mp.pauseVideo();
+    } catch {}
+
+    const word = vocabSpan.dataset.word || vocabSpan.textContent.trim();
+    const rect = vocabSpan.getBoundingClientRect();
+    const container = vocabSpan.closest(SUBTITLE_CONTAINER_SELECTORS.join(',')) || vocabSpan.parentElement;
+    const fullText = (container?.innerText || container?.textContent || '').replace(/\s+/g, ' ').trim();
+    const sentence = extractSentenceFromText(fullText, word) || fullText;
+
+    showTooltip(word, rect, sentence);
+    return;
+  }
 
   if (e.altKey && !e.shiftKey && !e.ctrlKey && e.button === 0) {
     const handled = triggerWordCard(e.clientX, e.clientY);
@@ -1610,11 +1956,33 @@ function recordObservedCue(text, time) {
 }
 
 function getAllSubtitleCues(video) {
-  // 1. Intercepted cues from VTT/TTML/timedtext streams
+  // Determine active on-screen subtitle language
+  let isTurkishOnScreen = (lastObservedSubtitleLanguage === 'tr');
+  const live = findActiveSubtitleCue();
+  if (live && live.text) {
+    if (/[çğıöşüÇĞİÖŞÜ]/.test(live.text)) {
+      isTurkishOnScreen = true;
+      lastObservedSubtitleLanguage = 'tr';
+    } else if (officialTurkishCues && officialTurkishCues.some(c => Math.abs(c.start - (video?.currentTime || 0)) < 2.5 && (c.text === live.text || live.text.includes(c.text)))) {
+      isTurkishOnScreen = true;
+      lastObservedSubtitleLanguage = 'tr';
+    } else if (preloadedSourceCues && preloadedSourceCues.some(c => Math.abs(c.start - (video?.currentTime || 0)) < 2.5 && (c.text === live.text || live.text.includes(c.text)))) {
+      isTurkishOnScreen = false;
+      lastObservedSubtitleLanguage = 'en';
+    }
+  }
+
+  // 1. If Turkish subtitles are actively being watched on screen, prioritize official Turkish cues
+  if (isTurkishOnScreen && officialTurkishCues && officialTurkishCues.length > 0) {
+    return officialTurkishCues;
+  }
+
+  // 2. Intercepted source cues from VTT/TTML/timedtext streams
   if (preloadedSourceCues && preloadedSourceCues.length > 0) {
     return preloadedSourceCues;
   }
-  // 2. HTML5 textTracks on the video
+
+  // 3. HTML5 textTracks on the video
   if (video && video.textTracks) {
     for (let i = 0; i < video.textTracks.length; i++) {
       const track = video.textTracks[i];
@@ -1634,11 +2002,13 @@ function getAllSubtitleCues(video) {
       }
     }
   }
-  // 3. Fallback to official intercepted Turkish cues if source was tagged tr
+
+  // 4. Fallback to official intercepted Turkish cues if source was tagged tr
   if (officialTurkishCues && officialTurkishCues.length > 0) {
     return officialTurkishCues;
   }
-  // 4. Observed DOM history cues
+
+  // 5. Observed DOM history cues
   if (observedHistoryCues && observedHistoryCues.length > 0) {
     return cleanAndMergeCues(observedHistoryCues);
   }
@@ -1718,14 +2088,20 @@ function handleNavKey(key) {
   if (!key) return;
   if (isInputActive(document.activeElement)) return;
   const k = key.toLowerCase();
-  if (k !== 'a' && k !== 'd' && k !== 's') return;
+  if (k !== 'a' && k !== 'd' && k !== 's' && k !== 'w') return;
 
   const now = Date.now();
   if (now - lastNavKeyTime < 180) return;
   lastNavKeyTime = now;
 
+  if (k === 'w') {
+    toggleHoverSubtitleByKey();
+    return;
+  }
+
   // Reset subtitle state before seek so stale cached sentence doesn't linger
   currentSubSentence = '';
+  wKeyHoverActive = false;
   if (subBar) {
     subBar.classList.remove('ydh-sub-visible');
   }
@@ -1830,7 +2206,7 @@ function repeatCurrentSubtitle() {
 
   // 1. Search official/preloaded cues FIRST (exact cue.start)
   if (cues && cues.length > 0) {
-    const currentCue = cues.find(c => (c.start - 0.2) <= now && now <= (c.end + 0.3));
+    const currentCue = cues.find(c => (c.start - 0.25) <= now && now <= (c.end + 0.35));
     if (currentCue) {
       seekVideoToTime(video, currentCue.start);
       showNavToast(`🔁 ${currentCue.text}`);
@@ -1876,6 +2252,13 @@ function ensureNavControls() {
     controls = document.createElement('div');
     controls.id = 'ydh-nav-controls';
     controls.innerHTML = `
+      <button type="button" class="ydh-nav-btn ydh-nav-settings" title="Altyazı Modu ve Ayarlar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+      <div class="ydh-nav-divider"></div>
       <button type="button" class="ydh-nav-btn ydh-nav-prev" title="Önceki Altyazı (A)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="11 19 2 12 11 5 11 19"></polygon>
@@ -1894,7 +2277,82 @@ function ensureNavControls() {
           <polygon points="2 19 11 12 2 5 2 19"></polygon>
         </svg>
       </button>
+
+      <div id="ydh-nav-menu">
+        <div class="ydh-menu-header">Altyazı Modu</div>
+        <button type="button" class="ydh-menu-item" data-mode="hover">
+          <div class="ydh-item-title-row">
+            <span class="ydh-item-title">Hover Modu (W)</span>
+            <svg class="ydh-item-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </div>
+          <span class="ydh-item-desc">Fare üstüne gelince veya W ile çevirir</span>
+        </button>
+        <button type="button" class="ydh-menu-item" data-mode="dual">
+          <div class="ydh-item-title-row">
+            <span class="ydh-item-title">Çift Altyazı</span>
+            <svg class="ydh-item-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </div>
+          <span class="ydh-item-desc">Her iki dili sürekli aynı anda gösterir</span>
+        </button>
+        <button type="button" class="ydh-menu-item" data-mode="off">
+          <div class="ydh-item-title-row">
+            <span class="ydh-item-title">Kapalı</span>
+            <svg class="ydh-item-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </div>
+          <span class="ydh-item-desc">Çeviri çubuğunu devre dışı bırakır</span>
+        </button>
+      </div>
     `;
+
+    const settingsBtn = controls.querySelector('.ydh-nav-settings');
+    const menu = controls.querySelector('#ydh-nav-menu');
+
+    function updateNavMenuState() {
+      const items = controls.querySelectorAll('.ydh-menu-item');
+      items.forEach(it => {
+        const mode = it.getAttribute('data-mode');
+        if (mode === activeSubtitleMode) {
+          it.classList.add('ydh-item-active');
+        } else {
+          it.classList.remove('ydh-item-active');
+        }
+      });
+    }
+
+    settingsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      updateNavMenuState();
+      menu.classList.toggle('ydh-menu-open');
+      settingsBtn.classList.toggle('ydh-active', menu.classList.contains('ydh-menu-open'));
+    });
+
+    const items = controls.querySelectorAll('.ydh-menu-item');
+    items.forEach(it => {
+      it.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const mode = it.getAttribute('data-mode');
+        if (mode) {
+          activeSubtitleMode = mode;
+          try {
+            if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+              chrome.storage.local.set({ subtitle_mode: mode });
+            }
+          } catch {}
+          handleSubtitleModeChange();
+          updateNavMenuState();
+          menu.classList.remove('ydh-menu-open');
+          settingsBtn.classList.remove('ydh-active');
+          const labels = {
+            hover: 'Hover Modu (W)',
+            dual: 'Çift Altyazı',
+            off: 'Kapalı'
+          };
+          showNavToast(`Mod: ${labels[mode] || mode}`);
+        }
+      });
+    });
 
     controls.querySelector('.ydh-nav-prev').addEventListener('click', (e) => {
       e.preventDefault();
@@ -1916,6 +2374,13 @@ function ensureNavControls() {
     controls.addEventListener('pointerdown', (e) => e.stopPropagation());
     controls.addEventListener('click', (e) => e.stopPropagation());
 
+    document.addEventListener('click', (e) => {
+      if (controls && !controls.contains(e.target)) {
+        menu?.classList.remove('ydh-menu-open');
+        settingsBtn?.classList.remove('ydh-active');
+      }
+    });
+
     container.appendChild(controls);
   } else if (controls.parentElement !== container) {
     container.appendChild(controls);
@@ -1925,7 +2390,7 @@ function ensureNavControls() {
   controls.style.display = hasVideo ? 'flex' : 'none';
 }
 
-// Global Keyboard Listener for A / D / S subtitle navigation (fallback / direct)
+// Global Keyboard Listener for W / A / D / S subtitle navigation & hover toggle (fallback / direct)
 window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.altKey || e.metaKey) return;
   if (isInputActive(e.target || document.activeElement)) return;
@@ -1935,9 +2400,10 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyA') key = 'a';
     else if (e.code === 'KeyD') key = 'd';
     else if (e.code === 'KeyS') key = 's';
+    else if (e.code === 'KeyW') key = 'w';
   }
 
-  if (key === 'a' || key === 'd' || key === 's') {
+  if (key === 'a' || key === 'd' || key === 's' || key === 'w') {
     const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
     if (!video) return;
 
@@ -1949,7 +2415,7 @@ window.addEventListener('keydown', (e) => {
   }
 }, true);
 
-// Swallow keyup and keypress so Prime Video's native listeners never see 'A'
+// Swallow keyup and keypress so Prime Video's native listeners never see 'A' or 'W'
 const swallowNavRelease = (e) => {
   if (e.ctrlKey || e.altKey || e.metaKey) return;
   if (isInputActive(e.target || document.activeElement)) return;
@@ -1959,9 +2425,10 @@ const swallowNavRelease = (e) => {
     if (e.code === 'KeyA') key = 'a';
     else if (e.code === 'KeyD') key = 'd';
     else if (e.code === 'KeyS') key = 's';
+    else if (e.code === 'KeyW') key = 'w';
   }
 
-  if (key === 'a' || key === 'd' || key === 's') {
+  if (key === 'a' || key === 'd' || key === 's' || key === 'w') {
     const video = findAssociatedVideo(window.innerWidth / 2, window.innerHeight / 2);
     if (video) {
       e.preventDefault();
@@ -2015,37 +2482,59 @@ function showTooltip(word, rect, contextSentence = null) {
   injectStyles();
   currentWord = word;
 
+  const cleanWord = word.trim().toLowerCase();
+  const knownEntry = userVocabMap.get(cleanWord) || userVocabMap.get(cleanWord.replace(/s$|es$|ed$|ing$/i, ''));
+  const isKnown = !!knownEntry;
+
   const container = getAppRoot();
 
   tooltip = document.createElement('div');
   tooltip.id = 'ydh-tooltip';
-  tooltip.innerHTML = `
-    <div class="ydh-word">${escHtml(word)}</div>
-    <div class="ydh-translation ydh-loading">çeviriliyor...</div>
-    <div class="ydh-mode-container">
-      <span class="ydh-mode-label">Kayıt:</span>
-      <div class="ydh-mode-pills">
-        <button type="button" class="ydh-pill ${activeSaveMode === 'ai' ? 'ydh-pill-active' : ''}" data-mode="ai">✨ AI (4 Anlam)</button>
-        <button type="button" class="ydh-pill ${activeSaveMode === 'classic' ? 'ydh-pill-active' : ''}" data-mode="classic">⚡ Klasik</button>
-      </div>
-    </div>
-    <button class="ydh-save-btn" disabled>💾 Kaydet</button>
-  `;
 
-  // Handle mode pill switching
-  const pills = tooltip.querySelectorAll('.ydh-pill');
-  pills.forEach(pill => {
-    pill.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const mode = pill.getAttribute('data-mode');
-      activeSaveMode = mode;
-      pills.forEach(p => p.classList.remove('ydh-pill-active'));
-      pill.classList.add('ydh-pill-active');
-      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-        chrome.storage.local.set({ translation_mode: mode });
-      }
+  if (isKnown) {
+    const diff = knownEntry.difficulty || 'unrated';
+    const diffLabel = (diff === 'easy' || diff === 'mastered') ? '🟢 Kolay' :
+                      diff === 'medium' ? '🟡 Orta' :
+                      diff === 'hard' ? '🔴 Zor' : '🔵 Yeni';
+
+    tooltip.innerHTML = `
+      <div class="ydh-word-header">
+        <div class="ydh-word">${escHtml(knownEntry.word || word)}</div>
+        <span class="ydh-diff-badge ydh-badge-${diff}">${diffLabel}</span>
+      </div>
+      <div class="ydh-translation">${escHtml(knownEntry.translation || 'Kütüphanende kayıtlı')}</div>
+      ${knownEntry.definition ? `<div class="ydh-definition" style="font-size:12px;color:#94a3b8;margin-bottom:10px;">${escHtml(knownEntry.definition)}</div>` : ''}
+      <button class="ydh-save-btn ydh-saved-btn">✅ Kütüphanede Kayıtlı</button>
+    `;
+  } else {
+    tooltip.innerHTML = `
+      <div class="ydh-word">${escHtml(word)}</div>
+      <div class="ydh-translation ydh-loading">çeviriliyor...</div>
+      <div class="ydh-mode-container">
+        <span class="ydh-mode-label">Kayıt:</span>
+        <div class="ydh-mode-pills">
+          <button type="button" class="ydh-pill ${activeSaveMode === 'ai' ? 'ydh-pill-active' : ''}" data-mode="ai">✨ AI (4 Anlam)</button>
+          <button type="button" class="ydh-pill ${activeSaveMode === 'classic' ? 'ydh-pill-active' : ''}" data-mode="classic">⚡ Klasik</button>
+        </div>
+      </div>
+      <button class="ydh-save-btn" disabled>💾 Kaydet</button>
+    `;
+
+    // Handle mode pill switching
+    const pills = tooltip.querySelectorAll('.ydh-pill');
+    pills.forEach(pill => {
+      pill.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const mode = pill.getAttribute('data-mode');
+        activeSaveMode = mode;
+        pills.forEach(p => p.classList.remove('ydh-pill-active'));
+        pill.classList.add('ydh-pill-active');
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+          chrome.storage.local.set({ translation_mode: mode });
+        }
+      });
     });
-  });
+  }
 
   // Calculate coordinates relative to container (handles fullscreen and standard body)
   let top, left;
@@ -2088,33 +2577,43 @@ function showTooltip(word, rect, contextSentence = null) {
   // Animate in
   requestAnimationFrame(() => tooltip?.classList.add('ydh-visible'));
 
-  // Fetch fast translation from background
-  chrome.runtime.sendMessage({ action: 'translate', word }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.error('Translation error:', chrome.runtime.lastError);
+  if (!isKnown) {
+    // Fetch fast translation from background
+    chrome.runtime.sendMessage({ action: 'translate', word }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('Translation error:', chrome.runtime.lastError);
+        if (!tooltip) return;
+        const transEl = tooltip.querySelector('.ydh-translation');
+        if (transEl) {
+          transEl.textContent = 'Hata: ' + chrome.runtime.lastError.message;
+          transEl.classList.remove('ydh-loading');
+          transEl.classList.add('ydh-error');
+        }
+        return;
+      }
+
       if (!tooltip) return;
       const transEl = tooltip.querySelector('.ydh-translation');
-      transEl.textContent = 'Hata: ' + chrome.runtime.lastError.message;
-      transEl.classList.remove('ydh-loading');
-      transEl.classList.add('ydh-error');
-      return;
-    }
+      const saveBtn = tooltip.querySelector('.ydh-save-btn');
 
-    if (!tooltip) return;
-    const transEl = tooltip.querySelector('.ydh-translation');
-    const saveBtn = tooltip.querySelector('.ydh-save-btn');
-
-    if (response?.translation) {
-      transEl.textContent = response.translation;
-      transEl.classList.remove('ydh-loading');
-      saveBtn.disabled = false;
-      saveBtn.addEventListener('click', () => saveWord(word, saveBtn, contextSentence, activeSaveMode));
-    } else {
-      transEl.textContent = response?.error || 'çeviri bulunamadı';
-      transEl.classList.remove('ydh-loading');
-      transEl.classList.add('ydh-error');
-    }
-  });
+      if (response?.translation) {
+        if (transEl) {
+          transEl.textContent = response.translation;
+          transEl.classList.remove('ydh-loading');
+        }
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.addEventListener('click', () => saveWord(word, saveBtn, contextSentence, activeSaveMode));
+        }
+      } else {
+        if (transEl) {
+          transEl.textContent = response?.error || 'çeviri bulunamadı';
+          transEl.classList.remove('ydh-loading');
+          transEl.classList.add('ydh-error');
+        }
+      }
+    });
+  }
 }
 
 // ── Bottom-Right Toast Notification ─────────────────────────────────────────
@@ -2336,6 +2835,138 @@ function injectStyles() {
     }
     .ydh-save-btn:disabled { opacity: 0.5; cursor: default; }
 
+    /* ── Vocabulary Library Subtitle Highlighting (Cinema Quality) ── */
+    .ydh-vocab-word {
+      position: relative !important;
+      display: inline-block !important;
+      border-radius: 4px !important;
+      padding: 0 4px !important;
+      margin: 0 1px !important;
+      cursor: pointer !important;
+      font-weight: 700 !important;
+      line-height: inherit !important;
+      vertical-align: baseline !important;
+      transition: all 0.15s ease-in-out !important;
+      user-select: text !important;
+      -webkit-user-select: text !important;
+    }
+
+    /* Easy / Mastered: Emerald Green glow & underline */
+    .ydh-vocab-easy,
+    .ydh-vocab-mastered {
+      color: #4ade80 !important;
+      text-shadow: 0 0 12px rgba(34, 197, 94, 0.8), 0 1px 3px rgba(0, 0, 0, 0.9) !important;
+      border-bottom: 2.5px solid #22c55e !important;
+      background: rgba(34, 197, 94, 0.18) !important;
+    }
+
+    /* Medium: Amber Yellow glow & underline */
+    .ydh-vocab-medium {
+      color: #facc15 !important;
+      text-shadow: 0 0 12px rgba(234, 179, 8, 0.8), 0 1px 3px rgba(0, 0, 0, 0.9) !important;
+      border-bottom: 2.5px solid #eab308 !important;
+      background: rgba(234, 179, 8, 0.18) !important;
+    }
+
+    /* Hard: Coral Red glow & underline */
+    .ydh-vocab-hard {
+      color: #f87171 !important;
+      text-shadow: 0 0 14px rgba(239, 68, 68, 0.9), 0 1px 3px rgba(0, 0, 0, 0.9) !important;
+      border-bottom: 2.5px solid #ef4444 !important;
+      background: rgba(239, 68, 68, 0.22) !important;
+    }
+
+    /* Unrated / New: Soft Cyan glow & underline */
+    .ydh-vocab-unrated {
+      color: #38bdf8 !important;
+      text-shadow: 0 0 12px rgba(56, 189, 248, 0.8), 0 1px 3px rgba(0, 0, 0, 0.9) !important;
+      border-bottom: 2.5px solid #38bdf8 !important;
+      background: rgba(56, 189, 248, 0.18) !important;
+    }
+
+    .ydh-vocab-word:hover {
+      filter: brightness(1.25) !important;
+      transform: scale(1.04) !important;
+    }
+
+    /* Instant CSS Floating Hover Tooltip (Dark Cinema Glassmorphism) */
+    .ydh-vocab-word::after {
+      content: attr(data-ydh-tip);
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%) translateY(4px);
+      background: rgba(15, 23, 42, 0.96);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #f8fafc;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+      z-index: 2147483647;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.7), 0 0 12px rgba(0, 0, 0, 0.5);
+      text-shadow: none !important;
+    }
+
+    .ydh-vocab-word:hover::after {
+      opacity: 1;
+      visibility: visible;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Tooltip badges & saved state */
+    .ydh-word-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .ydh-diff-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .ydh-badge-easy,
+    .ydh-badge-mastered {
+      background: rgba(34, 197, 94, 0.2);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+    }
+    .ydh-badge-medium {
+      background: rgba(234, 179, 8, 0.2);
+      color: #facc15;
+      border: 1px solid rgba(234, 179, 8, 0.4);
+    }
+    .ydh-badge-hard {
+      background: rgba(239, 68, 68, 0.2);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+    .ydh-badge-unrated {
+      background: rgba(56, 189, 248, 0.2);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+    }
+    .ydh-saved-btn {
+      background: rgba(34, 197, 94, 0.2) !important;
+      border-color: rgba(34, 197, 94, 0.5) !important;
+      color: #4ade80 !important;
+      cursor: default !important;
+    }
+
     /* Only actual subtitle text spans are interactive with pointer cursor */
     .atvwebplayersdk-captions-text span,
     .atvwebplayersdk-captions-text,
@@ -2495,6 +3126,97 @@ function injectStyles() {
       height: 17px;
       pointer-events: none;
     }
+    .ydh-nav-divider {
+      width: 22px;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.2);
+      margin: 2px auto;
+    }
+    .ydh-nav-btn.ydh-nav-settings.ydh-active {
+      background: rgba(99, 102, 241, 0.95);
+      color: #ffffff;
+      box-shadow: 0 0 12px rgba(99, 102, 241, 0.6);
+    }
+    #ydh-nav-menu {
+      position: absolute;
+      left: 54px;
+      top: -6px;
+      min-width: 230px;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 14px;
+      padding: 8px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75), 0 0 18px rgba(99, 102, 241, 0.25);
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 2147483647;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #ydh-nav-menu.ydh-menu-open {
+      display: flex !important;
+    }
+    .ydh-menu-header {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #94a3b8;
+      padding: 4px 8px 6px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      margin-bottom: 4px;
+    }
+    .ydh-menu-item {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 7px 10px;
+      border: 1px solid transparent;
+      background: transparent;
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.15s ease, border-color 0.15s ease;
+      color: #e2e8f0;
+      font-family: inherit;
+    }
+    .ydh-menu-item:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .ydh-menu-item.ydh-item-active {
+      background: rgba(99, 102, 241, 0.25);
+      border-color: rgba(99, 102, 241, 0.5);
+    }
+    .ydh-item-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+    }
+    .ydh-item-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #f8fafc;
+    }
+    .ydh-item-check {
+      width: 15px;
+      height: 15px;
+      opacity: 0;
+      color: #818cf8;
+      stroke-width: 3;
+    }
+    .ydh-menu-item.ydh-item-active .ydh-item-check {
+      opacity: 1;
+    }
+    .ydh-item-desc {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 2px;
+      line-height: 1.25;
+    }
   `;
 
   (document.head || document.documentElement).appendChild(style);
@@ -2505,10 +3227,13 @@ function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Initialize styles, navigation controls, and proactive performance resource lookup on load
+// Initialize styles, navigation controls, vocabulary engine, and proactive lookup on load
 injectStyles();
 ensureNavControls();
 setInterval(ensureNavControls, 2000);
+loadUserVocabFromStorage();
+setupSubtitleObserver();
+setInterval(highlightVocabInActiveSubtitles, 250);
 tryLoadSubtitlesFromPerformanceResources();
 setTimeout(tryLoadSubtitlesFromPerformanceResources, 1500);
 setTimeout(tryLoadSubtitlesFromPerformanceResources, 4000);

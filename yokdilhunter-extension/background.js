@@ -1,5 +1,36 @@
-import { getSession, checkDuplicate, saveWord } from './lib/supabase.js';
+import { getSession, checkDuplicate, saveWord, getAllUserWords } from './lib/supabase.js';
 import { fetchWordData, fetchTranslation, fetchGeminiSentenceTranslation } from './lib/api.js';
+
+// ── Vocabulary Library Sync Engine ──────────────────────────────────────────
+async function syncUserVocab(force = false) {
+  try {
+    const result = await chrome.storage.local.get(['ydh_user_vocab', 'ydh_vocab_last_sync']);
+    const now = Date.now();
+    const lastSync = result.ydh_vocab_last_sync || 0;
+
+    // Use cached vocabulary if within 10 minutes and not forced
+    if (!force && Array.isArray(result.ydh_user_vocab) && (now - lastSync < 10 * 60 * 1000)) {
+      return result.ydh_user_vocab;
+    }
+
+    const session = await getSession();
+    if (!session) return result.ydh_user_vocab || [];
+
+    const words = await getAllUserWords();
+    if (Array.isArray(words)) {
+      await chrome.storage.local.set({
+        ydh_user_vocab: words,
+        ydh_vocab_last_sync: now
+      });
+      return words;
+    }
+    return result.ydh_user_vocab || [];
+  } catch (err) {
+    console.warn('syncUserVocab error:', err);
+    const cached = await chrome.storage.local.get('ydh_user_vocab');
+    return cached.ydh_user_vocab || [];
+  }
+}
 
 // ── Service Worker Initialization ─────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
@@ -9,6 +40,13 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "🎯 Enesglish'e Kaydet",
     contexts: ["selection"]
   });
+
+  // Pre-fetch user library on install/update
+  syncUserVocab(true);
+});
+
+chrome.runtime.onStartup?.addListener(() => {
+  syncUserVocab(true);
 });
 
 // ── Context Menu Click Handler ───────────────────────────────────────────────
@@ -221,6 +259,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(err => sendResponse({ error: err.message }));
     return true;
   }
+
+  if (message.action === "get_user_vocab" || message.action === "refresh_user_vocab") {
+    syncUserVocab(message.force === true || message.action === "refresh_user_vocab")
+      .then(vocab => sendResponse({ success: true, vocab }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
 });
 
 function normalizeSubtitleIdioms(text) {
@@ -349,7 +394,7 @@ async function processAndSaveWord(text, tabId, url, contextSentence = null, mode
     const finalExampleSentence = data.example_sentence;
 
     // Save to Supabase
-    await saveWord({
+    const saved = await saveWord({
       english_word: data.english_word,
       turkish_translation: data.turkish_translation,
       synonyms: data.synonyms,
@@ -361,6 +406,22 @@ async function processAndSaveWord(text, tabId, url, contextSentence = null, mode
       repetitions: 0,
       ease_factor: 2.5
     });
+
+    // Synchronize into local storage cache immediately
+    try {
+      const stored = await chrome.storage.local.get('ydh_user_vocab');
+      const list = Array.isArray(stored.ydh_user_vocab) ? stored.ydh_user_vocab : [];
+      list.unshift({
+        id: saved?.id || Date.now().toString(),
+        english_word: data.english_word,
+        turkish_translation: data.turkish_translation,
+        difficulty: 'unrated',
+        definition: data.definition
+      });
+      await chrome.storage.local.set({ ydh_user_vocab: list, ydh_vocab_last_sync: Date.now() });
+    } catch (e) {
+      console.warn('Failed to update local vocab cache after save:', e);
+    }
 
     if (tabId) notify(tabId, `"${data.english_word}" başarıyla kaydedildi! ✅`);
     return { ...data, example_sentence: finalExampleSentence };
