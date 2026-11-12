@@ -1372,6 +1372,7 @@ function buildVocabMap(vocabList) {
 }
 
 function loadUserVocabFromStorage() {
+  cleanupLegacyVocabSpans(document);
   if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
   chrome.storage.local.get('ydh_user_vocab', (res) => {
     if (res?.ydh_user_vocab) {
@@ -1400,139 +1401,265 @@ if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
   });
 }
 
+// ── Safe, Zero-DOM-Mutation Subtitle Vocabulary Highlighting (CSS Custom Highlight API) ──
+let highlightEasy = null;
+let highlightMedium = null;
+let highlightHard = null;
+let highlightUnrated = null;
+
+function initHighlightRegistry() {
+  if (typeof CSS === 'undefined' || !CSS.highlights || typeof Highlight === 'undefined') {
+    return false;
+  }
+  if (!highlightEasy) {
+    try {
+      highlightEasy = new Highlight();
+      highlightMedium = new Highlight();
+      highlightHard = new Highlight();
+      highlightUnrated = new Highlight();
+      CSS.highlights.set('ydh-vocab-easy', highlightEasy);
+      CSS.highlights.set('ydh-vocab-mastered', highlightEasy);
+      CSS.highlights.set('ydh-vocab-medium', highlightMedium);
+      CSS.highlights.set('ydh-vocab-hard', highlightHard);
+      CSS.highlights.set('ydh-vocab-unrated', highlightUnrated);
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+function clearAllVocabHighlights() {
+  try {
+    highlightEasy?.clear();
+    highlightMedium?.clear();
+    highlightHard?.clear();
+    highlightUnrated?.clear();
+  } catch {}
+}
+
+function updateHighlightSet(hlSet, newRanges) {
+  if (!hlSet) return;
+  try {
+    hlSet.clear();
+    for (const r of newRanges) {
+      hlSet.add(r);
+    }
+  } catch {}
+}
+
+function cleanupLegacyVocabSpans(root = document) {
+  try {
+    const oldSpans = root.querySelectorAll('.ydh-vocab-word');
+    for (const span of oldSpans) {
+      const parent = span.parentNode;
+      if (parent) {
+        const text = span.textContent || '';
+        parent.replaceChild(document.createTextNode(text), span);
+        parent.normalize();
+      }
+    }
+  } catch {}
+}
+
+function findVocabMatchesInText(text) {
+  if (!text || text.trim().length < 2) return [];
+
+  const matches = [];
+
+  // 1. Multi-word phrase matching
+  if (userVocabPhrases && userVocabPhrases.length > 0) {
+    const lower = text.toLowerCase();
+    for (const p of userVocabPhrases) {
+      let pIdx = lower.indexOf(p.phrase);
+      while (pIdx !== -1) {
+        const pEnd = pIdx + p.phrase.length;
+        const beforeOk = (pIdx === 0 || !/[a-zA-Z0-9]/.test(text[pIdx - 1]));
+        const afterOk = (pEnd === text.length || !/[a-zA-Z0-9]/.test(text[pEnd]));
+        if (beforeOk && afterOk) {
+          const overlaps = matches.some(m => Math.max(m.start, pIdx) < Math.min(m.end, pEnd));
+          if (!overlaps) {
+            matches.push({
+              start: pIdx,
+              end: pEnd,
+              raw: text.slice(pIdx, pEnd),
+              entry: p.entry
+            });
+          }
+        }
+        pIdx = lower.indexOf(p.phrase, pEnd);
+      }
+    }
+  }
+
+  // 2. Single word matching
+  const wordRegex = /\b([a-zA-Z0-9'-]+)\b/g;
+  let m;
+  while ((m = wordRegex.exec(text)) !== null) {
+    const start = m.index;
+    const end = m.index + m[0].length;
+    const overlaps = matches.some(item => Math.max(item.start, start) < Math.min(item.end, end));
+    if (overlaps) continue;
+
+    const rawWord = m[0];
+    const cleanWord = rawWord.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase();
+    if (cleanWord.length >= 2 && userVocabMap.has(cleanWord)) {
+      matches.push({
+        start,
+        end,
+        raw: rawWord,
+        entry: userVocabMap.get(cleanWord)
+      });
+    }
+  }
+
+  return matches;
+}
+
 function highlightVocabInActiveSubtitles() {
-  if (userVocabMap.size === 0 && userVocabPhrases.length === 0) return;
+  if (userVocabMap.size === 0 && userVocabPhrases.length === 0) {
+    clearAllVocabHighlights();
+    return;
+  }
+
+  if (!initHighlightRegistry()) return;
 
   const selector = SUBTITLE_SELECTORS.join(',');
-  const elements = document.querySelectorAll(selector);
-  if (!elements || elements.length === 0) return;
+  let elements;
+  try {
+    elements = document.querySelectorAll(selector);
+  } catch {
+    clearAllVocabHighlights();
+    return;
+  }
+  if (!elements || elements.length === 0) {
+    clearAllVocabHighlights();
+    return;
+  }
+
+  const easyRanges = [];
+  const mediumRanges = [];
+  const hardRanges = [];
+  const unratedRanges = [];
 
   for (const el of elements) {
     if (!el || !el.isConnected) continue;
-    if (el.classList.contains('ydh-vocab-word') || el.closest('.ydh-vocab-word')) continue;
     if (el.id === 'ydh-sub-translation-bar' || el.closest('#ydh-sub-translation-bar')) continue;
     if (el.id === 'ydh-tooltip' || el.closest('#ydh-tooltip')) continue;
+    if (el.id === 'ydh-vocab-hover-tip') continue;
 
-    const fullText = el.textContent || '';
-    if (fullText.trim().length < 2) continue;
+    // Fast visibility check: skip invisible elements
+    if (!isElementVisible(el)) continue;
 
-    // Fast skip: content already scanned and contains highlighted words
-    if (el.dataset.ydhVocabText === fullText && el.querySelector('.ydh-vocab-word')) continue;
+    // Leaf subtitle element check: if container has nested subtitle spans, target the leaves
+    const childSub = el.querySelector(selector);
+    if (childSub) continue;
 
-    highlightElementTextNodes(el);
-    el.dataset.ydhVocabText = el.textContent || '';
+    const fullText = (el.textContent || '').trim();
+    if (fullText.length < 2) continue;
+
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+    let textNode;
+    while ((textNode = walker.nextNode())) {
+      const text = textNode.nodeValue;
+      if (!text || text.trim().length < 2) continue;
+
+      const matches = findVocabMatchesInText(text);
+      if (!matches || matches.length === 0) continue;
+
+      for (const match of matches) {
+        try {
+          const r = new Range();
+          r.setStart(textNode, match.start);
+          r.setEnd(textNode, match.end);
+          const diff = match.entry.difficulty || 'unrated';
+          if (diff === 'easy' || diff === 'mastered') {
+            easyRanges.push(r);
+          } else if (diff === 'medium') {
+            mediumRanges.push(r);
+          } else if (diff === 'hard') {
+            hardRanges.push(r);
+          } else {
+            unratedRanges.push(r);
+          }
+        } catch {}
+      }
+    }
   }
+
+  updateHighlightSet(highlightEasy, easyRanges);
+  updateHighlightSet(highlightMedium, mediumRanges);
+  updateHighlightSet(highlightHard, hardRanges);
+  updateHighlightSet(highlightUnrated, unratedRanges);
 }
 
-function highlightElementTextNodes(container) {
-  const childSub = container.querySelector(SUBTITLE_SELECTORS.join(','));
-  if (childSub) return;
+// ── Real-time Floating Vocab Hover Tooltip ──────────────────────────────────
+let vocabHoverTip = null;
+let lastHoveredVocabKey = null;
 
-  const textNodes = [];
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
-  let n;
-  while ((n = walker.nextNode())) {
-    if (n.nodeValue && n.nodeValue.trim().length > 0) {
-      if (n.parentElement && n.parentElement.classList.contains('ydh-vocab-word')) continue;
-      textNodes.push(n);
+function getVocabHoverTip() {
+  if (!vocabHoverTip || !vocabHoverTip.isConnected) {
+    vocabHoverTip = document.createElement('div');
+    vocabHoverTip.id = 'ydh-vocab-hover-tip';
+    const host = document.fullscreenElement || document.body;
+    host?.appendChild(vocabHoverTip);
+  } else {
+    const host = document.fullscreenElement || document.body;
+    if (vocabHoverTip.parentNode !== host) {
+      host?.appendChild(vocabHoverTip);
     }
   }
+  return vocabHoverTip;
+}
 
-  if (textNodes.length === 0) return;
+function hideVocabHoverTip() {
+  if (vocabHoverTip) {
+    vocabHoverTip.classList.remove('ydh-visible');
+  }
+  lastHoveredVocabKey = null;
+}
 
-  const wordRegex = /\b([a-zA-Z0-9'-]+)\b/g;
+function updateVocabHoverAt(x, y) {
+  if (userVocabMap.size === 0 && userVocabPhrases.length === 0) {
+    hideVocabHoverTip();
+    return;
+  }
 
-  for (const textNode of textNodes) {
-    const text = textNode.nodeValue;
-    if (!text || text.trim().length < 2) continue;
+  if (tooltip && tooltip.classList.contains('ydh-visible')) {
+    hideVocabHoverTip();
+    return;
+  }
 
-    const matches = [];
+  const subWord = extractSubtitleWordAtPoint(x, y);
+  if (!subWord || !subWord.word) {
+    hideVocabHoverTip();
+    return;
+  }
 
-    // 1. Multi-word phrase matching
-    if (userVocabPhrases.length > 0) {
-      const lower = text.toLowerCase();
-      for (const p of userVocabPhrases) {
-        let pIdx = lower.indexOf(p.phrase);
-        while (pIdx !== -1) {
-          const pEnd = pIdx + p.phrase.length;
-          const beforeOk = (pIdx === 0 || !/[a-zA-Z0-9]/.test(text[pIdx - 1]));
-          const afterOk = (pEnd === text.length || !/[a-zA-Z0-9]/.test(text[pEnd]));
-          if (beforeOk && afterOk) {
-            const overlaps = matches.some(m => Math.max(m.start, pIdx) < Math.min(m.end, pEnd));
-            if (!overlaps) {
-              matches.push({
-                start: pIdx,
-                end: pEnd,
-                raw: text.slice(pIdx, pEnd),
-                entry: p.entry
-              });
-            }
-          }
-          pIdx = lower.indexOf(p.phrase, pEnd);
-        }
-      }
-    }
+  const clean = subWord.word.toLowerCase();
+  const entry = userVocabMap.get(clean);
+  if (!entry) {
+    hideVocabHoverTip();
+    return;
+  }
 
-    // 2. Single word matching
-    wordRegex.lastIndex = 0;
-    let m;
-    while ((m = wordRegex.exec(text)) !== null) {
-      const start = m.index;
-      const end = m.index + m[0].length;
-      const overlaps = matches.some(item => Math.max(item.start, start) < Math.min(item.end, end));
-      if (overlaps) continue;
+  const diff = entry.difficulty || 'unrated';
+  const diffLabel = (diff === 'easy' || diff === 'mastered') ? '🟢 Kolay' :
+                    diff === 'medium' ? '🟡 Orta' :
+                    diff === 'hard' ? '🔴 Zor' : '🔵 Yeni';
 
-      const rawWord = m[0];
-      const cleanWord = rawWord.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase();
-      if (cleanWord.length >= 2 && userVocabMap.has(cleanWord)) {
-        matches.push({
-          start,
-          end,
-          raw: rawWord,
-          entry: userVocabMap.get(cleanWord)
-        });
-      }
-    }
+  const tipText = `${entry.word}: ${entry.translation || 'Çeviri yok'} [${diffLabel}]`;
+  const tip = getVocabHoverTip();
+  if (lastHoveredVocabKey !== clean) {
+    lastHoveredVocabKey = clean;
+    tip.textContent = tipText;
+  }
 
-    if (matches.length === 0) continue;
-
-    matches.sort((a, b) => a.start - b.start);
-
-    const frag = document.createDocumentFragment();
-    let cur = 0;
-
-    for (const match of matches) {
-      if (match.start > cur) {
-        frag.appendChild(document.createTextNode(text.slice(cur, match.start)));
-      }
-
-      const span = document.createElement('span');
-      const diff = match.entry.difficulty || 'unrated';
-      span.className = `ydh-vocab-word ydh-vocab-${diff}`;
-      span.dataset.word = match.entry.word;
-      span.dataset.difficulty = diff;
-      span.dataset.translation = match.entry.translation || '';
-
-      const diffLabel = (diff === 'easy' || diff === 'mastered') ? '🟢 Kolay' :
-                        diff === 'medium' ? '🟡 Orta' :
-                        diff === 'hard' ? '🔴 Zor' : '🔵 Yeni';
-
-      const tipText = `${match.entry.word}: ${match.entry.translation || 'Çeviri yok'} [${diffLabel}]`;
-      span.setAttribute('data-ydh-tip', tipText);
-      span.title = tipText;
-      span.textContent = match.raw;
-
-      frag.appendChild(span);
-      cur = match.end;
-    }
-
-    if (cur < text.length) {
-      frag.appendChild(document.createTextNode(text.slice(cur)));
-    }
-
-    try {
-      textNode.parentNode?.replaceChild(frag, textNode);
-    } catch {}
+  const rect = subWord.rect;
+  if (rect) {
+    tip.style.left = `${Math.round(rect.left + rect.width / 2)}px`;
+    tip.style.top = `${Math.round(Math.max(10, rect.top - 38))}px`;
+    tip.classList.add('ydh-visible');
   }
 }
 
@@ -1641,6 +1768,9 @@ function scanAndShowDualSubtitle() {
 
 // ── Hover Mode Mouse Listener ───────────────────────────────────────────────
 window.addEventListener('mousemove', (e) => {
+  // Update vocabulary hover tooltip on subtitles (works in any subtitle mode!)
+  updateVocabHoverAt(e.clientX, e.clientY);
+
   if (activeSubtitleMode !== 'hover') return;
 
   // If hovering over player controls, settings menu, or our own tooltip, abort!
@@ -1721,6 +1851,7 @@ window.addEventListener('mousemove', (e) => {
 }, { passive: true });
 
 document.addEventListener('mouseleave', () => {
+  hideVocabHoverTip();
   if (wKeyHoverActive) return;
   if (activeSubtitleMode === 'hover' && subBar && subBar.classList.contains('ydh-sub-visible')) {
     hideSubBar();
@@ -1731,12 +1862,14 @@ document.addEventListener('mouseleave', () => {
 document.addEventListener('fullscreenchange', () => {
   hideTooltip();
   hideSubBar();
+  hideVocabHoverTip();
   handleSubtitleModeChange();
   ensureNavControls();
 });
 document.addEventListener('webkitfullscreenchange', () => {
   hideTooltip();
   hideSubBar();
+  hideVocabHoverTip();
   handleSubtitleModeChange();
   ensureNavControls();
 });
@@ -1850,7 +1983,41 @@ window.addEventListener('click', (e) => {
   if (tooltip && tooltip.contains(e.target)) return;
   if (isPlayerControlOrUI(e.target)) return;
 
-  // Direct click on a highlighted vocabulary word: pause video & open word details card
+  // 1. Direct click on a saved vocabulary word in subtitles: pause video & open word details card
+  if (e.button === 0 && !e.altKey && !e.shiftKey && !e.ctrlKey) {
+    const subWord = extractSubtitleWordAtPoint(e.clientX, e.clientY);
+    if (subWord && subWord.word) {
+      const clean = subWord.word.toLowerCase();
+      if (userVocabMap.has(clean)) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation?.();
+
+        const video = findAssociatedVideo(e.clientX, e.clientY) || document.querySelector('video');
+        if (video) {
+          try { video.pause(); } catch {}
+          const keepPaused = () => {
+            if (tooltip && tooltip.classList.contains('ydh-visible')) {
+              try { video.pause(); } catch {}
+            } else {
+              video.removeEventListener('play', keepPaused);
+            }
+          };
+          video.addEventListener('play', keepPaused);
+        }
+        try {
+          const mp = document.getElementById('movie_player');
+          if (mp && typeof mp.pauseVideo === 'function') mp.pauseVideo();
+        } catch {}
+
+        hideVocabHoverTip();
+        showTooltip(subWord.word, subWord.rect, subWord.sentence);
+        return;
+      }
+    }
+  }
+
+  // 2. Direct click on a legacy highlighted vocabulary word span (if any): pause video & open word details card
   const vocabSpan = e.target.closest?.('.ydh-vocab-word');
   if (vocabSpan && e.button === 0) {
     e.preventDefault();
@@ -1880,6 +2047,7 @@ window.addEventListener('click', (e) => {
     const fullText = (container?.innerText || container?.textContent || '').replace(/\s+/g, ' ').trim();
     const sentence = extractSentenceFromText(fullText, word) || fullText;
 
+    hideVocabHoverTip();
     showTooltip(word, rect, sentence);
     return;
   }
@@ -2834,6 +3002,65 @@ function injectStyles() {
       color: #c7d2fe;
     }
     .ydh-save-btn:disabled { opacity: 0.5; cursor: default; }
+
+    /* ── Safe, Zero-DOM-Mutation CSS Custom Highlight API Subtitle Styling ── */
+    ::highlight(ydh-vocab-easy),
+    ::highlight(ydh-vocab-mastered) {
+      color: #4ade80 !important;
+      background-color: rgba(34, 197, 94, 0.28) !important;
+      text-decoration: underline 2.5px solid #22c55e !important;
+      text-shadow: 0 0 10px rgba(34, 197, 94, 0.8), 0 1px 2px rgba(0, 0, 0, 0.9) !important;
+    }
+
+    ::highlight(ydh-vocab-medium) {
+      color: #facc15 !important;
+      background-color: rgba(234, 179, 8, 0.28) !important;
+      text-decoration: underline 2.5px solid #eab308 !important;
+      text-shadow: 0 0 10px rgba(234, 179, 8, 0.8), 0 1px 2px rgba(0, 0, 0, 0.9) !important;
+    }
+
+    ::highlight(ydh-vocab-hard) {
+      color: #f87171 !important;
+      background-color: rgba(239, 68, 68, 0.32) !important;
+      text-decoration: underline 2.5px solid #ef4444 !important;
+      text-shadow: 0 0 12px rgba(239, 68, 68, 0.9), 0 1px 2px rgba(0, 0, 0, 0.9) !important;
+    }
+
+    ::highlight(ydh-vocab-unrated) {
+      color: #38bdf8 !important;
+      background-color: rgba(56, 189, 248, 0.28) !important;
+      text-decoration: underline 2.5px solid #38bdf8 !important;
+      text-shadow: 0 0 10px rgba(56, 189, 248, 0.8), 0 1px 2px rgba(0, 0, 0, 0.9) !important;
+    }
+
+    /* Floating Vocab Hover Tooltip (Dark Cinema Glassmorphism) */
+    #ydh-vocab-hover-tip {
+      position: fixed;
+      z-index: 2147483647;
+      background: rgba(15, 23, 42, 0.96);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #f8fafc;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      pointer-events: none !important;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateX(-50%) translateY(4px);
+      transition: opacity 0.12s ease, transform 0.12s ease;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.7), 0 0 12px rgba(0, 0, 0, 0.5);
+      text-shadow: none !important;
+    }
+    #ydh-vocab-hover-tip.ydh-visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translateX(-50%) translateY(0);
+    }
 
     /* ── Vocabulary Library Subtitle Highlighting (Cinema Quality) ── */
     .ydh-vocab-word {

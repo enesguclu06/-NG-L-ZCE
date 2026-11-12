@@ -442,3 +442,34 @@ export function dismissStreakLostNotice(userId = null) {
   window.dispatchEvent(new CustomEvent('yokdil_streak_updated', { detail: updated }))
 }
 
+/**
+ * Manually sets or restores user's streak and syncs to Supabase cloud.
+ */
+export async function manualSetStreak(userId, targetStreak = 1, completedToday = true) {
+  const key = getStorageKey(userId)
+  const current = getStreakData(userId)
+  const today = getLocalDateString(new Date())
+  const numStreak = Math.max(1, parseInt(targetStreak, 10) || 1)
+
+  const updated = {
+    ...current,
+    todayDate: today,
+    todayCount: completedToday ? Math.max(current.todayCount || 0, DAILY_STREAK_TARGET) : (current.todayCount || 0),
+    currentStreak: numStreak,
+    bestStreak: Math.max(current.bestStreak || 0, numStreak),
+    lastCompletedDate: today,
+    lastFreezeUsedAt: null, // Kalkanı da sıfırlayıp hemen kullanıma hazır yapar
+    freezeUsedNotice: false,
+    streakLostNotice: false,
+    lostStreakCount: 0,
+  }
+
+  saveStreakState(key, updated)
+  if (userId) {
+    await syncStreakToCloud(userId, updated)
+  }
+  window.dispatchEvent(new CustomEvent('yokdil_streak_updated', { detail: updated }))
+  return updated
+}
+
+

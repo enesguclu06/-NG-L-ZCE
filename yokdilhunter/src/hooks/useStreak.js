@@ -6,6 +6,7 @@ import {
   recordReviewForStreak,
   dismissFreezeNotice,
   dismissStreakLostNotice,
+  manualSetStreak,
   mergeCloudStreak,
   syncStreakToCloud,
   syncStreakWithWords,
@@ -50,6 +51,7 @@ export function useStreak() {
       try {
         const { data: { user: freshUser } } = await supabase.auth.getUser()
         if (freshUser?.user_metadata?.streak_data) {
+          useAuthStore.getState().setUser(freshUser, useAuthStore.getState().session)
           mergeCloudStreak(userId, freshUser.user_metadata.streak_data)
           if (isMounted) refreshStreak()
         } else {
@@ -123,6 +125,18 @@ export function useStreak() {
   const closeCelebration = useCallback(() => {
     setJustCompletedModal(false)
   }, [])
+
+  // Expose global console helper to easily restore or set streak: window.setStreak(10)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.setStreak = async (targetStreak = 1, completedToday = true) => {
+        const res = await manualSetStreak(userId, targetStreak, completedToday)
+        refreshStreak()
+        console.log(`🔥 Seri başarıyla ${targetStreak} gün olarak ayarlandı ve Supabase'e kaydedildi!`, res)
+        return res
+      }
+    }
+  }, [userId, refreshStreak])
 
   return {
     ...streak,
