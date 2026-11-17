@@ -51,6 +51,8 @@ function getInitialState() {
 
 /**
  * Loads streak state, checks for date transitions, applies streak freeze or reset if needed.
+ * NOTE: For logged-in users, expiration is evaluated by reconcileStreakWithCloud to prevent
+ * stale local cache from destroying cloud streak achieved on another device (e.g. phone).
  */
 export function getStreakData(userId = null) {
   const key = getStorageKey(userId)
@@ -73,7 +75,7 @@ export function getStreakData(userId = null) {
 
   let stateChanged = false
 
-  // 1. Day transition check
+  // 1. Day transition check: reset today's counter if a new calendar day has started
   if (state.todayDate !== today) {
     state.todayDate = today
     state.todayCount = 0
@@ -88,34 +90,30 @@ export function getStreakData(userId = null) {
   }
 
   // 2. Streak evaluation (has user broken the chain?)
-  if (state.lastCompletedDate) {
+  // For logged-in users: Skip local evaluation here! reconcileStreakWithCloud handles it with full cloud authority.
+  // For guest users: Evaluate locally since guest has no cloud account.
+  if (!userId && state.lastCompletedDate) {
     const daysSinceCompleted = getDaysDiff(state.lastCompletedDate, today)
 
-    // daysSinceCompleted === 0 -> Completed today already!
-    // daysSinceCompleted === 1 -> Completed yesterday, today in progress, streak safe!
     if (daysSinceCompleted === 2) {
-      // Exactly 1 day was missed (yesterday)!
+      // Exactly 1 day was missed (yesterday)
       const freezeAvailable = isFreezeAvailable(state.lastFreezeUsedAt)
 
       if (freezeAvailable && state.currentStreak > 0) {
-        // Automatically save the streak using the 14-day recovery shield!
         state.lastFreezeUsedAt = Date.now()
-        state.lastCompletedDate = yesterday // Treat yesterday as saved
+        state.lastCompletedDate = yesterday
         state.freezeUsedNotice = true
         state.streakLostNotice = false
         stateChanged = true
-      } else {
-        // Freeze not available or streak was 0
-        if (state.currentStreak > 0) {
-          state.lostStreakCount = state.currentStreak
-          state.currentStreak = 0
-          state.streakLostNotice = true
-          state.freezeUsedNotice = false
-          stateChanged = true
-        }
+      } else if (state.currentStreak > 0) {
+        state.lostStreakCount = state.currentStreak
+        state.currentStreak = 0
+        state.streakLostNotice = true
+        state.freezeUsedNotice = false
+        stateChanged = true
       }
     } else if (daysSinceCompleted > 2) {
-      // 2 or more consecutive days missed -> streak lost
+      // 2 or more consecutive days missed
       if (state.currentStreak > 0) {
         state.lostStreakCount = state.currentStreak
         state.currentStreak = 0
@@ -137,9 +135,7 @@ export function getStreakData(userId = null) {
 
   if (stateChanged) {
     saveStreakState(key, state)
-    if (userId) {
-      syncStreakToCloud(userId, state)
-    }
+    // NOTE: NEVER trigger network syncStreakToCloud inside a synchronous getter!
   }
 
   return {
@@ -166,12 +162,21 @@ function saveStreakState(key, state) {
 }
 
 let lastSyncedJson = null
+let lastKnownCloudCompletedDate = null
 
 /**
  * Saves streak state to Supabase account (user_metadata) so all devices sync.
+ * Guards against pushing older completion dates over newer cloud completions.
  */
 export async function syncStreakToCloud(userId, state) {
   if (!userId || !state) return
+
+  // Strict cross-device safety: never overwrite a newer cloud completion date with an older local date
+  if (lastKnownCloudCompletedDate && state.lastCompletedDate && state.lastCompletedDate < lastKnownCloudCompletedDate) {
+    console.warn('Rejected stale streak sync to cloud (local date is older than known cloud date):', state.lastCompletedDate, '<', lastKnownCloudCompletedDate)
+    return
+  }
+
   const payload = {
     todayDate: state.todayDate,
     todayCount: state.todayCount,
@@ -184,12 +189,17 @@ export async function syncStreakToCloud(userId, state) {
     streakLostNotice: !!state.streakLostNotice,
     lostStreakCount: state.lostStreakCount || 0,
   }
+
   const payloadStr = `${userId}:${JSON.stringify(payload)}`
   if (lastSyncedJson === payloadStr) {
-    return // Already synced to cloud, don't spam updateUser and trigger auth state loop!
+    return // Already synced to cloud, don't spam updateUser
   }
+
   try {
     lastSyncedJson = payloadStr
+    if (payload.lastCompletedDate) {
+      lastKnownCloudCompletedDate = payload.lastCompletedDate
+    }
     await supabase.auth.updateUser({
       data: {
         streak_data: payload
@@ -201,154 +211,172 @@ export async function syncStreakToCloud(userId, state) {
 }
 
 /**
- * Merges cloud streak with local streak and writes back to localStorage.
+ * Master Cross-Device Streak Reconciler.
+ * Safely unifies local device storage, Supabase user_metadata cloud state, and words DB.
+ * Guarantees phone and PC never overwrite or break each other's streaks!
  */
-export function mergeCloudStreak(userId, cloudState) {
-  if (!userId || !cloudState) return getStreakData(userId)
+export function reconcileStreakWithCloud(userId, cloudState, wordsData = []) {
+  if (!userId) return getStreakData(null)
   const key = getStorageKey(userId)
   const local = getStreakData(userId)
+  const cloud = cloudState || {}
+
   const today = getLocalDateString(new Date())
+  const yesterdayDate = new Date()
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1)
+  const yesterday = getLocalDateString(yesterdayDate)
 
-  const merged = { ...local }
+  // 1. Authoritative Best Streak (Highest ever achieved across any device)
+  const bestStreak = Math.max(local.bestStreak || 0, cloud.bestStreak || 0)
 
-  // Best streak: take max
-  merged.bestStreak = Math.max(local.bestStreak || 0, cloudState.bestStreak || 0)
+  // 2. Authoritative Recovery Shield (Freeze) Used Timestamp
+  const lastFreezeUsedAt = Math.max(
+    Number(local.lastFreezeUsedAt) || 0,
+    Number(cloud.lastFreezeUsedAt) || 0
+  ) || null
 
-  // Current streak & completion
-  if (cloudState.lastCompletedDate) {
-    if (!local.lastCompletedDate || cloudState.lastCompletedDate > local.lastCompletedDate) {
-      merged.lastCompletedDate = cloudState.lastCompletedDate
-      merged.currentStreak = cloudState.currentStreak || 0
-    } else if (cloudState.lastCompletedDate === local.lastCompletedDate) {
-      merged.currentStreak = Math.max(local.currentStreak || 0, cloudState.currentStreak || 0)
+  // 3. Authoritative Latest Completed Date & Active Streak
+  const cloudCompleted = cloud.lastCompletedDate || ''
+  const localCompleted = local.lastCompletedDate || ''
+  let latestCompletedDate = null
+  let activeStreak = 0
+
+  if (cloudCompleted > localCompleted) {
+    // Cloud has more recent completion (e.g. user completed yesterday on phone, PC was unopened)
+    latestCompletedDate = cloudCompleted
+    activeStreak = cloud.currentStreak || 0
+  } else if (localCompleted > cloudCompleted) {
+    // Local device has more recent completion
+    latestCompletedDate = localCompleted
+    activeStreak = local.currentStreak || 0
+  } else {
+    // Same completion date or both empty
+    latestCompletedDate = cloudCompleted || localCompleted || null
+    activeStreak = Math.max(local.currentStreak || 0, cloud.currentStreak || 0)
+  }
+
+  // 4. Combine today's words across both devices & database
+  const dbTodayWords = []
+  if (Array.isArray(wordsData) && wordsData.length > 0) {
+    for (const w of wordsData) {
+      if (w.last_reviewed_at && getLocalDateString(w.last_reviewed_at) === today) {
+        dbTodayWords.push(w.id)
+      }
     }
   }
 
-  // Today count & words (if same day)
-  if (cloudState.todayDate === today && local.todayDate === today) {
-    const combinedIds = Array.from(new Set([...(local.todayWordIds || []), ...(cloudState.todayWordIds || [])]))
-    merged.todayWordIds = combinedIds
-    merged.todayCount = combinedIds.length
-    if (merged.todayCount >= DAILY_STREAK_TARGET && merged.lastCompletedDate !== today) {
-      merged.lastCompletedDate = today
-      merged.currentStreak = (merged.currentStreak || 0) + 1
-      merged.bestStreak = Math.max(merged.bestStreak, merged.currentStreak)
+  const localTodayWords = (local.todayDate === today && Array.isArray(local.todayWordIds)) ? local.todayWordIds : []
+  const cloudTodayWords = (cloud.todayDate === today && Array.isArray(cloud.todayWordIds)) ? cloud.todayWordIds : []
+  const combinedTodayWordIds = Array.from(new Set([...localTodayWords, ...cloudTodayWords, ...dbTodayWords]))
+  const todayCount = combinedTodayWordIds.length
+
+  // Check if today's 10-word target is newly achieved
+  if (todayCount >= DAILY_STREAK_TARGET && latestCompletedDate !== today) {
+    latestCompletedDate = today
+    activeStreak = (activeStreak || 0) + 1
+  }
+
+  // 5. Bug Auto-Rescue:
+  // If activeStreak was falsely reset to 0 by the previous PC-open bug, but user completed yesterday or today
+  // or has reviews in the database from yesterday or today, auto-restore the streak!
+  if (activeStreak === 0 && bestStreak > 0) {
+    if (latestCompletedDate === today || latestCompletedDate === yesterday) {
+      activeStreak = bestStreak
+    } else {
+      const hasRecentReviews = Array.isArray(wordsData) && wordsData.some(w => {
+        if (!w.last_reviewed_at) return false
+        const d = getLocalDateString(w.last_reviewed_at)
+        return d === today || d === yesterday
+      })
+      if (hasRecentReviews) {
+        latestCompletedDate = latestCompletedDate || yesterday
+        activeStreak = bestStreak
+      }
     }
-  } else if (cloudState.todayDate === today && local.todayDate !== today) {
-    merged.todayDate = today
-    merged.todayWordIds = cloudState.todayWordIds || []
-    merged.todayCount = (cloudState.todayWordIds || []).length
   }
 
-  if (cloudState.lastFreezeUsedAt) {
-    merged.lastFreezeUsedAt = Math.max(local.lastFreezeUsedAt || 0, cloudState.lastFreezeUsedAt)
+  // 6. Cross-Device Streak Expiration Evaluation
+  let freezeUsedNotice = false
+  let streakLostNotice = false
+  let lostStreakCount = 0
+
+  if (latestCompletedDate) {
+    const daysSinceCompleted = getDaysDiff(latestCompletedDate, today)
+
+    if (daysSinceCompleted <= 1) {
+      // 0 = completed today, 1 = completed yesterday on phone or PC!
+      // Streak is 100% healthy and active!
+      freezeUsedNotice = false
+      streakLostNotice = false
+      lostStreakCount = 0
+    } else if (daysSinceCompleted === 2) {
+      // Exactly yesterday was missed across ALL devices!
+      const freezeAvailable = isFreezeAvailable(lastFreezeUsedAt)
+      if (freezeAvailable && activeStreak > 0) {
+        // Recovery Shield automatically saves the streak!
+        lastFreezeUsedAt = Date.now()
+        latestCompletedDate = yesterday
+        freezeUsedNotice = true
+        streakLostNotice = false
+      } else if (activeStreak > 0) {
+        // Shield already on cooldown or streak was 0
+        lostStreakCount = activeStreak
+        activeStreak = 0
+        streakLostNotice = true
+        freezeUsedNotice = false
+      }
+    } else if (daysSinceCompleted > 2) {
+      // 2 or more consecutive days missed across all devices
+      if (activeStreak > 0) {
+        lostStreakCount = activeStreak
+        activeStreak = 0
+        streakLostNotice = true
+        freezeUsedNotice = false
+      }
+    }
   }
 
-  if (cloudState.freezeUsedNotice !== undefined) {
-    merged.freezeUsedNotice = cloudState.freezeUsedNotice
-  }
-  if (cloudState.streakLostNotice !== undefined) {
-    merged.streakLostNotice = cloudState.streakLostNotice
-    merged.lostStreakCount = cloudState.lostStreakCount || 0
-  }
+  const finalBestStreak = Math.max(bestStreak, activeStreak)
 
-  // Check if anything actually changed before saving and dispatching
-  const hasChanged =
-    local.todayDate !== merged.todayDate ||
-    local.todayCount !== merged.todayCount ||
-    local.currentStreak !== merged.currentStreak ||
-    local.bestStreak !== merged.bestStreak ||
-    local.lastCompletedDate !== merged.lastCompletedDate ||
-    local.lastFreezeUsedAt !== merged.lastFreezeUsedAt ||
-    local.freezeUsedNotice !== merged.freezeUsedNotice ||
-    local.streakLostNotice !== merged.streakLostNotice ||
-    (local.todayWordIds || []).length !== (merged.todayWordIds || []).length
-
-  if (!hasChanged) {
-    return local
+  const reconciled = {
+    todayDate: today,
+    todayCount,
+    todayWordIds: combinedTodayWordIds,
+    currentStreak: activeStreak,
+    bestStreak: finalBestStreak,
+    lastCompletedDate: latestCompletedDate,
+    lastFreezeUsedAt,
+    freezeUsedNotice,
+    streakLostNotice,
+    lostStreakCount,
   }
 
-  saveStreakState(key, merged)
-  window.dispatchEvent(new CustomEvent('yokdil_streak_updated', { detail: merged }))
-  return merged
+  // Save to local cache
+  saveStreakState(key, reconciled)
+
+  // Track latest cloud completed date so stale local pushes are rejected
+  if (reconciled.lastCompletedDate) {
+    lastKnownCloudCompletedDate = reconciled.lastCompletedDate
+  }
+
+  // Push unified state to Supabase cloud
+  syncStreakToCloud(userId, reconciled)
+
+  // Reactive UI update
+  window.dispatchEvent(new CustomEvent('yokdil_streak_updated', { detail: reconciled }))
+
+  return reconciled
 }
 
 /**
- * Calculates and synchronizes streak directly from Supabase words table.
- * Guarantees that on any new device (mobile, tablet, etc.) streak is immediately accurate.
+ * Backward compatibility aliases.
  */
+export function mergeCloudStreak(userId, cloudState) {
+  return reconcileStreakWithCloud(userId, cloudState, [])
+}
+
 export function syncStreakWithWords(userId, words = []) {
-  if (!userId || !Array.isArray(words) || words.length === 0) return getStreakData(userId)
-  const key = getStorageKey(userId)
-  const current = getStreakData(userId)
-  const today = getLocalDateString(new Date())
-
-  // Kelimeleri tarihlere göre grupla
-  const dateMap = new Map() // 'YYYY-MM-DD' => Set(wordId)
-  for (const w of words) {
-    if (w.last_reviewed_at) {
-      const d = getLocalDateString(w.last_reviewed_at)
-      if (!dateMap.has(d)) dateMap.set(d, new Set())
-      dateMap.get(d).add(w.id)
-    }
-  }
-
-  const dbTodayWords = dateMap.get(today) ? Array.from(dateMap.get(today)) : []
-  // Localde bugün çalışılmış kelimelerle veritabanındaki kelimeleri birleştir
-  const combinedTodayWords = Array.from(new Set([...(current.todayWordIds || []), ...dbTodayWords]))
-  const todayCount = combinedTodayWords.length
-  const isCompletedToday = todayCount >= DAILY_STREAK_TARGET
-
-  // Geriye doğru streak say
-  let calculatedStreak = 0
-  let checkDate = new Date()
-
-  if (!isCompletedToday) {
-    checkDate.setDate(checkDate.getDate() - 1)
-  }
-
-  while (true) {
-    const keyStr = getLocalDateString(checkDate)
-    const count = (keyStr === today ? todayCount : (dateMap.get(keyStr)?.size || 0))
-    if (count >= DAILY_STREAK_TARGET) {
-      calculatedStreak++
-      checkDate.setDate(checkDate.getDate() - 1)
-    } else {
-      break
-    }
-  }
-
-  const newCurrentStreak = Math.max(current.currentStreak || 0, calculatedStreak)
-  const newBestStreak = Math.max(current.bestStreak || 0, newCurrentStreak)
-  const newLastCompletedDate = isCompletedToday ? today : current.lastCompletedDate
-
-  const updated = {
-    ...current,
-    todayDate: today,
-    todayCount,
-    todayWordIds: combinedTodayWords,
-    currentStreak: newCurrentStreak,
-    bestStreak: newBestStreak,
-    lastCompletedDate: newLastCompletedDate,
-  }
-
-  // Check if anything actually changed before saving and dispatching
-  const hasChanged =
-    current.todayDate !== updated.todayDate ||
-    current.todayCount !== updated.todayCount ||
-    current.currentStreak !== updated.currentStreak ||
-    current.bestStreak !== updated.bestStreak ||
-    current.lastCompletedDate !== updated.lastCompletedDate ||
-    (current.todayWordIds || []).length !== (updated.todayWordIds || []).length
-
-  if (!hasChanged) {
-    return current
-  }
-
-  saveStreakState(key, updated)
-  syncStreakToCloud(userId, updated)
-  window.dispatchEvent(new CustomEvent('yokdil_streak_updated', { detail: updated }))
-  return updated
+  return reconcileStreakWithCloud(userId, null, words)
 }
 
 /**

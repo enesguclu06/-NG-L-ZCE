@@ -7,9 +7,7 @@ import {
   dismissFreezeNotice,
   dismissStreakLostNotice,
   manualSetStreak,
-  mergeCloudStreak,
-  syncStreakToCloud,
-  syncStreakWithWords,
+  reconcileStreakWithCloud,
   DAILY_STREAK_TARGET
 } from '../lib/streak'
 
@@ -25,14 +23,13 @@ export function useStreak() {
     setStreak(getStreakData(userId))
   }, [userId])
 
-  // ── Sync with Supabase Account on mount / user change ─────────
+  // ── Master Cross-Device Cloud Sync on mount / user change ─────
   useEffect(() => {
     if (!userId) {
       syncedUserIdRef.current = null
       return
     }
 
-    // Only run cloud sync once per user session to prevent re-render loops
     if (syncedUserIdRef.current === userId) {
       return
     }
@@ -41,52 +38,43 @@ export function useStreak() {
     let isMounted = true
 
     async function syncFromAccount() {
-      // 1. Check if user in auth store already has streak_data
-      if (initialCloudStreak) {
-        mergeCloudStreak(userId, initialCloudStreak)
-        if (isMounted) refreshStreak()
-      }
+      let cloudStreak = initialCloudStreak
+      let wordsData = []
 
-      // 2. Fetch fresh user data from Supabase to guarantee cross-device sync (e.g. phone vs desktop)
+      // 1. Fetch fresh user metadata from Supabase
       try {
         const { data: { user: freshUser } } = await supabase.auth.getUser()
-        if (freshUser?.user_metadata?.streak_data) {
+        if (freshUser) {
           useAuthStore.getState().setUser(freshUser, useAuthStore.getState().session)
-          mergeCloudStreak(userId, freshUser.user_metadata.streak_data)
-          if (isMounted) refreshStreak()
-        } else {
-          // If cloud has no streak yet but local has one, push to cloud
-          const local = getStreakData(userId)
-          if (local.currentStreak > 0 || local.todayCount > 0) {
-            syncStreakToCloud(userId, local)
+          if (freshUser.user_metadata?.streak_data) {
+            cloudStreak = freshUser.user_metadata.streak_data
           }
         }
       } catch (err) {
-        console.warn('Cross-device streak sync failed:', err)
+        console.warn('Cross-device streak sync failed (auth):', err)
       }
 
-      // 3. Directly verify with database words reviewed by user
-      // Even if localStorage is completely empty (new phone login), this guarantees correct streak!
+      // 2. Fetch reviewed words from DB to detect reviews done on other devices
       try {
-        const { data: wordsData } = await supabase
+        const { data } = await supabase
           .from('words')
           .select('id, last_reviewed_at')
           .eq('user_id', userId)
           .not('last_reviewed_at', 'is', null)
-
-        if (wordsData && wordsData.length > 0) {
-          syncStreakWithWords(userId, wordsData)
-          if (isMounted) refreshStreak()
-        }
-      } catch (e) {
-        console.warn('Could not sync streak from words DB:', e)
+        if (data) wordsData = data
+      } catch (err) {
+        console.warn('Cross-device streak sync failed (words):', err)
       }
+
+      // 3. Perform master cross-device reconciliation
+      reconcileStreakWithCloud(userId, cloudStreak, wordsData)
+      if (isMounted) refreshStreak()
     }
 
     syncFromAccount()
 
     return () => { isMounted = false }
-  }, [userId, refreshStreak])
+  }, [userId, initialCloudStreak, refreshStreak])
 
   useEffect(() => {
     refreshStreak()
