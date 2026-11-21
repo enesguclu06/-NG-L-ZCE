@@ -48,6 +48,15 @@ export function Layout({ children }) {
 
           {/* Right side */}
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Leaderboard Link */}
+            <button
+              onClick={() => navigate('/leaderboard')}
+              className="flex items-center gap-1 p-2 rounded-lg text-xs font-medium transition-all bg-white/5 text-amber-300 hover:text-amber-200 hover:bg-white/10 border border-white/5"
+              title="Global Liderlik Tablosu"
+            >
+              <span className="text-sm">🏆</span>
+            </button>
+
             {/* Tutorial Guide Trigger */}
             <button
               onClick={() => setShowTutorialModal(true)}

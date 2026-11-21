@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { playAudio } from '../../lib/audio'
 import { fetchExampleSentence } from '../../lib/api'
 import { recordReviewLog } from '../../lib/reviewHistory'
+import { PronunciationModal } from './PronunciationModal'
 
 const DIFFICULTY_CONFIG = {
   unrated:  { label: 'Değerlendirilmemiş', cls: 'badge-unrated',  dot: '⬤' },
@@ -17,6 +18,7 @@ const DIFFICULTY_CONFIG = {
  */
 export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
   const [showDelete, setShowDelete] = useState(false)
+  const [showPronounce, setShowPronounce] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({
     turkish_translation: word.turkish_translation ?? '',
@@ -114,6 +116,13 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
                 <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 0 0 1.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06ZM18.584 5.106a.75.75 0 0 1 1.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.668.75.75 0 0 1 0-1.06Z" />
                 <path d="M15.932 7.757a.75.75 0 0 1 1.061 0 4.5 4.5 0 0 1 0 6.364.75.75 0 0 1-1.06-1.06 3 3 0 0 0 0-4.243.75.75 0 0 1 0-1.061Z" />
               </svg>
+            </button>
+            <button
+              onClick={() => setShowPronounce(true)}
+              className="text-slate-400 hover:text-amber-300 p-1 rounded-md hover:bg-amber-500/10 transition-colors shrink-0 text-xs flex items-center gap-1"
+              title="Telaffuz Pratiği Yap (Konuşarak Test Et)"
+            >
+              <span>🎙️</span>
             </button>
           </div>
           <div className="flex gap-2">
@@ -303,6 +312,13 @@ export function WordCard({ word, onDelete, onUpdate, decks = [] }) {
           </div>
         </div>
       )}
+
+      {/* ── Pronunciation Practice Modal ── */}
+      <PronunciationModal
+        isOpen={showPronounce}
+        onClose={() => setShowPronounce(false)}
+        word={word}
+      />
     </div>
   )
 }

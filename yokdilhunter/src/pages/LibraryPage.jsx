@@ -3,6 +3,8 @@ import { useWords } from '../hooks/useWords'
 import { useDecks } from '../hooks/useDecks'
 import { WordCard } from '../components/words/WordCard'
 import { Toast, useToast } from '../components/Toast'
+import { ImportExportModal } from '../components/words/ImportExportModal'
+import { DeckManagerModal } from '../components/words/DeckManagerModal'
 
 const DIFFICULTY_FILTERS = [
   { key: 'all', label: 'Tümü' },
@@ -15,10 +17,12 @@ const DIFFICULTY_FILTERS = [
 
 export default function LibraryPage() {
   const { words, loading: wordsLoading, error, fetchWords, deleteWord, updateWord } = useWords()
-  const { decks, fetchDecks, loading: decksLoading } = useDecks()
+  const { decks, fetchDecks, createDeck, deleteDeck, loading: decksLoading } = useDecks()
   const [search, setSearch] = useState('')
   const [diffFilter, setDiffFilter] = useState('all')
   const [catFilter, setCatFilter] = useState('all') // Actually deck_id filter
+  const [showImportExport, setShowImportExport] = useState(false)
+  const [showDeckManager, setShowDeckManager] = useState(false)
   const [sortBy, setSortBy] = useState(() => {
     try {
       return localStorage.getItem('ydh_library_sort') || 'newest'
@@ -167,22 +171,31 @@ export default function LibraryPage() {
       <Toast {...toast} onClose={clearToast} />
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between mb-5 animate-fade-up">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 animate-fade-up">
         <div>
           <h2 className="text-2xl font-black text-white">Kütüphane</h2>
-          <p className="text-slate-400 text-sm mt-0.5">{words.length} kelime kayıtlı</p>
+          <p className="text-slate-400 text-xs sm:text-sm mt-0.5">{words.length} kelime kayıtlı</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Deck Manager Button */}
           <button
-            onClick={handleExportCSV}
-            className="p-2 rounded-xl bg-base-800 border border-white/[0.06] text-slate-400 hover:text-white hover:bg-base-700 transition-colors"
-            title="CSV Olarak İndir"
+            onClick={() => setShowDeckManager(true)}
+            className="px-3 py-2 rounded-xl bg-base-800 border border-white/10 text-xs font-semibold text-slate-300 hover:text-white hover:bg-base-700 transition-colors flex items-center gap-1.5"
+            title="Desteleri Düzenle"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-            </svg>
+            <span>🏷️</span>
+            <span>Desteler ({decks.length})</span>
           </button>
-          <div className="text-3xl">📚</div>
+
+          {/* Import / Export Button */}
+          <button
+            onClick={() => setShowImportExport(true)}
+            className="px-3 py-2 rounded-xl bg-primary-500/20 border border-primary-500/40 text-xs font-semibold text-primary-200 hover:bg-primary-500/30 transition-colors flex items-center gap-1.5 shadow-glow-primary"
+            title="CSV İçe / Dışa Aktar"
+          >
+            <span>📥/📤</span>
+            <span>İçe / Dışa Aktar</span>
+          </button>
         </div>
       </div>
 
@@ -336,6 +349,25 @@ export default function LibraryPage() {
           </p>
         </div>
       )}
+
+      {/* ── Import & Export Modal ── */}
+      <ImportExportModal
+        isOpen={showImportExport}
+        onClose={() => setShowImportExport(false)}
+        words={words}
+        decks={decks}
+        onRefresh={fetchWords}
+      />
+
+      {/* ── Deck Manager Modal ── */}
+      <DeckManagerModal
+        isOpen={showDeckManager}
+        onClose={() => setShowDeckManager(false)}
+        decks={decks}
+        words={words}
+        onCreateDeck={createDeck}
+        onDeleteDeck={deleteDeck}
+      />
     </div>
   )
 }

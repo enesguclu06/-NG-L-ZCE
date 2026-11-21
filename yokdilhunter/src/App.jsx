@@ -11,6 +11,8 @@ import ReviewPage from './pages/ReviewPage'
 import DashboardPage from './pages/DashboardPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import ExtensionGuidePage from './pages/ExtensionGuidePage'
+import QuizPage from './pages/QuizPage'
+import LeaderboardPage from './pages/LeaderboardPage'
 
 /**
  * Listens for Supabase auth events (like PASSWORD_RECOVERY) and handles routing.
@@ -120,6 +122,22 @@ export default function App() {
           element={
             <ProtectedRoute>
               <ReviewPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/quiz"
+          element={
+            <ProtectedRoute>
+              <QuizPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/leaderboard"
+          element={
+            <ProtectedRoute>
+              <LeaderboardPage />
             </ProtectedRoute>
           }
         />
