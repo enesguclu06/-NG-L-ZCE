@@ -154,3 +154,49 @@ export async function getAllUserWords() {
   }
 }
 
+export async function updateWordDifficulty(word, newDifficulty) {
+  const session = await getSession();
+  if (!session) throw new Error('Not authenticated');
+
+  const cleanWord = (word || '').trim().toLowerCase();
+  const payload = {
+    difficulty: newDifficulty,
+    last_reviewed_at: new Date().toISOString(),
+  };
+
+  if (newDifficulty === 'mastered') {
+    payload.interval_days = 365;
+    payload.next_review_at = new Date(Date.now() + 365 * 86400000).toISOString();
+  } else if (newDifficulty === 'easy') {
+    payload.interval_days = 10;
+    payload.next_review_at = new Date(Date.now() + 10 * 86400000).toISOString();
+  } else if (newDifficulty === 'medium') {
+    payload.interval_days = 3;
+    payload.next_review_at = new Date(Date.now() + 3 * 86400000).toISOString();
+  } else if (newDifficulty === 'hard') {
+    payload.interval_days = 1;
+    payload.next_review_at = new Date(Date.now() + 86400000).toISOString();
+  } else {
+    payload.interval_days = 1;
+    payload.next_review_at = new Date().toISOString();
+  }
+
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/words?user_id=eq.${session.user.id}&english_word=ilike.${encodeURIComponent(cleanWord)}`, {
+    method: 'PATCH',
+    headers: {
+      ...(await getHeaders(true)),
+      'Prefer': 'return=representation',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message || 'Zorluk derecesi güncellenemedi');
+  }
+
+  const updatedRows = await res.json().catch(() => []);
+  return updatedRows[0] || payload;
+}
+
+

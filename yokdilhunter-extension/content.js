@@ -1402,6 +1402,7 @@ if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
 }
 
 // ── Safe, Zero-DOM-Mutation Subtitle Vocabulary Highlighting (CSS Custom Highlight API) ──
+let highlightMastered = null;
 let highlightEasy = null;
 let highlightMedium = null;
 let highlightHard = null;
@@ -1413,12 +1414,13 @@ function initHighlightRegistry() {
   }
   if (!highlightEasy) {
     try {
+      highlightMastered = new Highlight();
       highlightEasy = new Highlight();
       highlightMedium = new Highlight();
       highlightHard = new Highlight();
       highlightUnrated = new Highlight();
+      CSS.highlights.set('ydh-vocab-mastered', highlightMastered);
       CSS.highlights.set('ydh-vocab-easy', highlightEasy);
-      CSS.highlights.set('ydh-vocab-mastered', highlightEasy);
       CSS.highlights.set('ydh-vocab-medium', highlightMedium);
       CSS.highlights.set('ydh-vocab-hard', highlightHard);
       CSS.highlights.set('ydh-vocab-unrated', highlightUnrated);
@@ -1431,6 +1433,7 @@ function initHighlightRegistry() {
 
 function clearAllVocabHighlights() {
   try {
+    highlightMastered?.clear();
     highlightEasy?.clear();
     highlightMedium?.clear();
     highlightHard?.clear();
@@ -1537,6 +1540,7 @@ function highlightVocabInActiveSubtitles() {
     return;
   }
 
+  const masteredRanges = [];
   const easyRanges = [];
   const mediumRanges = [];
   const hardRanges = [];
@@ -1573,7 +1577,9 @@ function highlightVocabInActiveSubtitles() {
           r.setStart(textNode, match.start);
           r.setEnd(textNode, match.end);
           const diff = match.entry.difficulty || 'unrated';
-          if (diff === 'easy' || diff === 'mastered') {
+          if (diff === 'mastered') {
+            masteredRanges.push(r);
+          } else if (diff === 'easy') {
             easyRanges.push(r);
           } else if (diff === 'medium') {
             mediumRanges.push(r);
@@ -1587,6 +1593,7 @@ function highlightVocabInActiveSubtitles() {
     }
   }
 
+  updateHighlightSet(highlightMastered, masteredRanges);
   updateHighlightSet(highlightEasy, easyRanges);
   updateHighlightSet(highlightMedium, mediumRanges);
   updateHighlightSet(highlightHard, hardRanges);
@@ -1644,7 +1651,8 @@ function updateVocabHoverAt(x, y) {
   }
 
   const diff = entry.difficulty || 'unrated';
-  const diffLabel = (diff === 'easy' || diff === 'mastered') ? '🟢 Kolay' :
+  const diffLabel = diff === 'mastered' ? '🎓 Ezberlendi' :
+                    diff === 'easy' ? '🟢 Kolay' :
                     diff === 'medium' ? '🟡 Orta' :
                     diff === 'hard' ? '🔴 Zor' : '🔵 Yeni';
 
@@ -2661,7 +2669,8 @@ function showTooltip(word, rect, contextSentence = null) {
 
   if (isKnown) {
     const diff = knownEntry.difficulty || 'unrated';
-    const diffLabel = (diff === 'easy' || diff === 'mastered') ? '🟢 Kolay' :
+    const diffLabel = diff === 'mastered' ? '🎓 Ezberlendi' :
+                      diff === 'easy' ? '🟢 Kolay' :
                       diff === 'medium' ? '🟡 Orta' :
                       diff === 'hard' ? '🔴 Zor' : '🔵 Yeni';
 
@@ -2671,9 +2680,71 @@ function showTooltip(word, rect, contextSentence = null) {
         <span class="ydh-diff-badge ydh-badge-${diff}">${diffLabel}</span>
       </div>
       <div class="ydh-translation">${escHtml(knownEntry.translation || 'Kütüphanende kayıtlı')}</div>
-      ${knownEntry.definition ? `<div class="ydh-definition" style="font-size:12px;color:#94a3b8;margin-bottom:10px;">${escHtml(knownEntry.definition)}</div>` : ''}
-      <button class="ydh-save-btn ydh-saved-btn">✅ Kütüphanede Kayıtlı</button>
+      ${knownEntry.definition ? `<div class="ydh-definition" style="font-size:12px;color:#94a3b8;margin-bottom:8px;">${escHtml(knownEntry.definition)}</div>` : ''}
+      
+      <div class="ydh-diff-quick-bar" style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:11px;color:#94a3b8;font-weight:600;">Zorluk Derecesini Değiştir:</span>
+          <span class="ydh-diff-feedback" style="font-size:10px;font-weight:bold;color:#4ade80;"></span>
+        </div>
+        <div class="ydh-diff-buttons" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;">
+          <button type="button" class="ydh-diff-rate-btn ${diff==='hard'?'active':''}" data-rate="hard" title="Zor (1 gün)">🔴 Zor</button>
+          <button type="button" class="ydh-diff-rate-btn ${diff==='medium'?'active':''}" data-rate="medium" title="Orta (3 gün)">🟡 Orta</button>
+          <button type="button" class="ydh-diff-rate-btn ${diff==='easy'?'active':''}" data-rate="easy" title="Kolay (10 gün)">🟢 Kolay</button>
+          <button type="button" class="ydh-diff-rate-btn ${diff==='mastered'?'active':''}" data-rate="mastered" title="Ezberledim (Çok Kolay)">🎓 Ezberledim</button>
+        </div>
+      </div>
     `;
+
+    // Hook up quick rate buttons
+    const rateBtns = tooltip.querySelectorAll('.ydh-diff-rate-btn');
+    const badgeEl = tooltip.querySelector('.ydh-diff-badge');
+    const feedbackEl = tooltip.querySelector('.ydh-diff-feedback');
+
+    rateBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const newRate = btn.getAttribute('data-rate');
+        if (!newRate) return;
+
+        rateBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        if (feedbackEl) {
+          feedbackEl.textContent = 'Kaydediliyor...';
+          feedbackEl.style.color = '#38bdf8';
+        }
+
+        chrome.runtime.sendMessage({
+          action: 'update_word_difficulty',
+          word: knownEntry.word || word,
+          difficulty: newRate
+        }, (res) => {
+          if (res && res.success) {
+            knownEntry.difficulty = newRate;
+            userVocabMap.set(cleanWord, knownEntry);
+            const newLabel = newRate === 'mastered' ? '🎓 Ezberlendi' :
+                             newRate === 'easy' ? '🟢 Kolay' :
+                             newRate === 'medium' ? '🟡 Orta' :
+                             newRate === 'hard' ? '🔴 Zor' : '🔵 Yeni';
+            if (badgeEl) {
+              badgeEl.className = `ydh-diff-badge ydh-badge-${newRate}`;
+              badgeEl.textContent = newLabel;
+            }
+            if (feedbackEl) {
+              feedbackEl.textContent = '✓ Kaydedildi';
+              feedbackEl.style.color = '#4ade80';
+              setTimeout(() => { if (feedbackEl) feedbackEl.textContent = ''; }, 2000);
+            }
+            highlightVocabInActiveSubtitles();
+          } else {
+            if (feedbackEl) {
+              feedbackEl.textContent = '✗ ' + (res?.error || 'Hata');
+              feedbackEl.style.color = '#f87171';
+            }
+          }
+        });
+      });
+    });
   } else {
     tooltip.innerHTML = `
       <div class="ydh-word">${escHtml(word)}</div>
@@ -3004,8 +3075,14 @@ function injectStyles() {
     .ydh-save-btn:disabled { opacity: 0.5; cursor: default; }
 
     /* ── Safe, Zero-DOM-Mutation CSS Custom Highlight API Subtitle Styling ── */
-    ::highlight(ydh-vocab-easy),
     ::highlight(ydh-vocab-mastered) {
+      color: #38bdf8 !important;
+      background-color: rgba(14, 165, 233, 0.28) !important;
+      text-decoration: underline 2.5px solid #0ea5e9 !important;
+      text-shadow: 0 0 10px rgba(56, 189, 248, 0.85), 0 1px 2px rgba(0, 0, 0, 0.9) !important;
+    }
+
+    ::highlight(ydh-vocab-easy) {
       color: #4ade80 !important;
       background-color: rgba(34, 197, 94, 0.28) !important;
       text-decoration: underline 2.5px solid #22c55e !important;
@@ -3027,10 +3104,10 @@ function injectStyles() {
     }
 
     ::highlight(ydh-vocab-unrated) {
-      color: #38bdf8 !important;
-      background-color: rgba(56, 189, 248, 0.28) !important;
-      text-decoration: underline 2.5px solid #38bdf8 !important;
-      text-shadow: 0 0 10px rgba(56, 189, 248, 0.8), 0 1px 2px rgba(0, 0, 0, 0.9) !important;
+      color: #a5b4fc !important;
+      background-color: rgba(99, 102, 241, 0.25) !important;
+      text-decoration: underline 2.5px solid #818cf8 !important;
+      text-shadow: 0 0 10px rgba(129, 140, 248, 0.8), 0 1px 2px rgba(0, 0, 0, 0.9) !important;
     }
 
     /* Floating Vocab Hover Tooltip (Dark Cinema Glassmorphism) */
@@ -3078,9 +3155,16 @@ function injectStyles() {
       -webkit-user-select: text !important;
     }
 
-    /* Easy / Mastered: Emerald Green glow & underline */
-    .ydh-vocab-easy,
+    /* Mastered: Cinema Sky Blue glow & underline */
     .ydh-vocab-mastered {
+      color: #38bdf8 !important;
+      text-shadow: 0 0 12px rgba(56, 189, 248, 0.85), 0 1px 3px rgba(0, 0, 0, 0.9) !important;
+      border-bottom: 2.5px solid #0ea5e9 !important;
+      background: rgba(14, 165, 233, 0.18) !important;
+    }
+
+    /* Easy: Emerald Green glow & underline */
+    .ydh-vocab-easy {
       color: #4ade80 !important;
       text-shadow: 0 0 12px rgba(34, 197, 94, 0.8), 0 1px 3px rgba(0, 0, 0, 0.9) !important;
       border-bottom: 2.5px solid #22c55e !important;
@@ -3103,12 +3187,12 @@ function injectStyles() {
       background: rgba(239, 68, 68, 0.22) !important;
     }
 
-    /* Unrated / New: Soft Cyan glow & underline */
+    /* Unrated / New: Indigo glow & underline */
     .ydh-vocab-unrated {
-      color: #38bdf8 !important;
-      text-shadow: 0 0 12px rgba(56, 189, 248, 0.8), 0 1px 3px rgba(0, 0, 0, 0.9) !important;
-      border-bottom: 2.5px solid #38bdf8 !important;
-      background: rgba(56, 189, 248, 0.18) !important;
+      color: #a5b4fc !important;
+      text-shadow: 0 0 12px rgba(129, 140, 248, 0.8), 0 1px 3px rgba(0, 0, 0, 0.9) !important;
+      border-bottom: 2.5px solid #818cf8 !important;
+      background: rgba(99, 102, 241, 0.18) !important;
     }
 
     .ydh-vocab-word:hover {
@@ -3166,8 +3250,12 @@ function injectStyles() {
       font-weight: 700;
       letter-spacing: 0.02em;
     }
-    .ydh-badge-easy,
     .ydh-badge-mastered {
+      background: rgba(14, 165, 233, 0.2);
+      color: #38bdf8;
+      border: 1px solid rgba(14, 165, 233, 0.4);
+    }
+    .ydh-badge-easy {
       background: rgba(34, 197, 94, 0.2);
       color: #4ade80;
       border: 1px solid rgba(34, 197, 94, 0.4);
@@ -3183,9 +3271,49 @@ function injectStyles() {
       border: 1px solid rgba(239, 68, 68, 0.4);
     }
     .ydh-badge-unrated {
-      background: rgba(56, 189, 248, 0.2);
-      color: #38bdf8;
-      border: 1px solid rgba(56, 189, 248, 0.4);
+      background: rgba(99, 102, 241, 0.2);
+      color: #a5b4fc;
+      border: 1px solid rgba(99, 102, 241, 0.4);
+    }
+
+    /* Quick Rate Buttons in Video Tooltip */
+    .ydh-diff-rate-btn {
+      padding: 5px 3px;
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #cbd5e1;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .ydh-diff-rate-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      transform: translateY(-1px);
+    }
+    .ydh-diff-rate-btn.active[data-rate="hard"] {
+      background: rgba(239, 68, 68, 0.3);
+      border-color: #ef4444;
+      color: #fca5a5;
+    }
+    .ydh-diff-rate-btn.active[data-rate="medium"] {
+      background: rgba(234, 179, 8, 0.3);
+      border-color: #eab308;
+      color: #fde047;
+    }
+    .ydh-diff-rate-btn.active[data-rate="easy"] {
+      background: rgba(34, 197, 94, 0.3);
+      border-color: #22c55e;
+      color: #86efac;
+    }
+    .ydh-diff-rate-btn.active[data-rate="mastered"] {
+      background: rgba(14, 165, 233, 0.3);
+      border-color: #0ea5e9;
+      color: #7dd3fc;
+      box-shadow: 0 0 10px rgba(14, 165, 233, 0.4);
     }
     .ydh-saved-btn {
       background: rgba(34, 197, 94, 0.2) !important;

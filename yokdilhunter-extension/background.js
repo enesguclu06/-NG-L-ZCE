@@ -1,4 +1,4 @@
-import { getSession, checkDuplicate, saveWord, getAllUserWords } from './lib/supabase.js';
+import { getSession, checkDuplicate, saveWord, getAllUserWords, updateWordDifficulty } from './lib/supabase.js';
 import { fetchWordData, fetchTranslation, fetchGeminiSentenceTranslation } from './lib/api.js';
 
 // ── Vocabulary Library Sync Engine ──────────────────────────────────────────
@@ -264,6 +264,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     syncUserVocab(message.force === true || message.action === "refresh_user_vocab")
       .then(vocab => sendResponse({ success: true, vocab }))
       .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.action === "update_word_difficulty") {
+    const { word, difficulty } = message;
+    updateWordDifficulty(word, difficulty)
+      .then(async (updated) => {
+        // Update local cache immediately
+        const stored = await chrome.storage.local.get('ydh_user_vocab');
+        const list = Array.isArray(stored.ydh_user_vocab) ? stored.ydh_user_vocab : [];
+        const cleanWord = (word || '').trim().toLowerCase();
+        let found = false;
+        for (const item of list) {
+          if (item.english_word?.trim().toLowerCase() === cleanWord) {
+            item.difficulty = difficulty;
+            found = true;
+          }
+        }
+        if (!found) {
+          list.push({ english_word: word, difficulty });
+        }
+        await chrome.storage.local.set({ ydh_user_vocab: list, ydh_vocab_last_sync: Date.now() });
+        sendResponse({ success: true, updated });
+      })
+      .catch((err) => {
+        console.warn('update_word_difficulty error:', err);
+        sendResponse({ success: false, error: err.message });
+      });
     return true;
   }
 });

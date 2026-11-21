@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const loginScreen = document.getElementById('loginScreen');
   const authScreen = document.getElementById('authScreen');
   const logoutBtn = document.getElementById('logoutBtn');
+  const syncVocabBtn = document.getElementById('syncVocabBtn');
   
   const loginForm = document.getElementById('loginForm');
   const loginBtn = document.getElementById('loginBtn');
@@ -186,14 +187,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     loginScreen.style.display = 'block';
     authScreen.style.display = 'none';
     logoutBtn.style.display = 'none';
+    if (syncVocabBtn) syncVocabBtn.style.display = 'none';
   }
 
   function showAuthScreen() {
     loginScreen.style.display = 'none';
     authScreen.style.display = 'block';
     logoutBtn.style.display = 'block';
+    if (syncVocabBtn) syncVocabBtn.style.display = 'block';
     loadRecentWords();
+    // Auto-refresh vocabulary from Supabase on popup open
+    chrome.runtime.sendMessage({ action: "refresh_user_vocab" });
   }
+
+  syncVocabBtn?.addEventListener('click', () => {
+    syncVocabBtn.disabled = true;
+    syncVocabBtn.textContent = '⏳';
+    chrome.runtime.sendMessage({ action: "refresh_user_vocab" }, (res) => {
+      syncVocabBtn.disabled = false;
+      if (res?.success) {
+        syncVocabBtn.textContent = '✓';
+        setTimeout(() => { syncVocabBtn.textContent = '🔄 Eşitle'; }, 1500);
+      } else {
+        syncVocabBtn.textContent = '✗';
+        setTimeout(() => { syncVocabBtn.textContent = '🔄 Eşitle'; }, 1500);
+      }
+    });
+  });
 
   async function loadRecentWords() {
     loadingWords.style.display = 'block';
