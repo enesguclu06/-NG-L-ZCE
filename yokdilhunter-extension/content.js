@@ -987,25 +987,13 @@ function cleanAndMergeCues(rawCues) {
     }
     const last = merged[merged.length - 1];
 
-    // Check if cue and last are two lines of the same simultaneous dialogue card:
-    // They end at virtually the same time (within 0.6s) AND start within 0.55s of each other,
-    // OR they overlap for the vast majority of their display time (>= 60% of the shorter line).
-    // Sequential dialogue lines (e.g. a previous sentence) end several seconds apart and are never merged.
-    const overlapStart = Math.max(cue.start, last.start);
-    const overlapEnd = Math.min(cue.end, last.end);
-    const overlap = Math.max(0, overlapEnd - overlapStart);
-    const minDur = Math.min(cue.end - cue.start, last.end - last.start);
-    const isSameSubtitleCard =
-      (Math.abs(cue.end - last.end) <= 0.6 && Math.abs(cue.start - last.start) <= 0.55) ||
-      (minDur > 0.4 && (overlap / minDur) >= 0.6);
-
-    if (isSameSubtitleCard) {
+    // Merge only if cues share virtually the same start time (simultaneous multi-line lines in TTML/VTT)
+    if (Math.abs(cue.start - last.start) <= 0.35) {
       if (!last.text.includes(cleanText)) {
         last.text = `${last.text} ${cleanText}`.trim();
       }
-      last.start = Math.min(last.start, cue.start);
       last.end = Math.max(last.end, cue.end);
-    } else if (cleanText === last.text && Math.abs(cue.start - last.end) <= 0.3) {
+    } else if (cleanText === last.text && Math.abs(cue.start - last.end) <= 0.4) {
       last.end = Math.max(last.end, cue.end);
     } else {
       merged.push({ start: cue.start, end: cue.end, text: cleanText });
@@ -1161,82 +1149,54 @@ window.addEventListener('popstate', () => {
 function getOfficialTurkishTranslation(sentence, videoTime) {
   if (!officialTurkishCues || officialTurkishCues.length === 0) return null;
   const now = typeof videoTime === 'number' ? videoTime : (document.querySelector('video')?.currentTime || 0);
+  const cleanSentence = (sentence || '').replace(/\s+/g, ' ').trim();
 
-  // 1. Time overlap match with the active English source cue
+  // 1. Time overlap match with the active English source cue(s)
   if (preloadedSourceCues && preloadedSourceCues.length > 0) {
-    const cleanSentence = (sentence || '').replace(/\s+/g, ' ').trim();
-    // Match the English cue truly active at current video playback
-    const srcCue = preloadedSourceCues.find(c =>
-      (c.start - 0.25) <= now && now <= (c.end + 0.25) &&
-      (c.text === cleanSentence || cleanSentence.includes(c.text) || c.text.includes(cleanSentence))
-    ) || preloadedSourceCues.find(c => (c.start - 0.2) <= now && now <= (c.end + 0.2));
+    const matchingSrc = preloadedSourceCues.filter(c => {
+      const isMatch = c.text && (cleanSentence.includes(c.text) || c.text.includes(cleanSentence));
+      const isNear = c.start <= (now + 2.5) && c.end >= (now - 2.5);
+      return isMatch && isNear;
+    });
 
-    if (srcCue) {
-      let bestTr = null;
-      let maxOverlap = 0;
+    if (matchingSrc.length > 0) {
+      const srcStart = Math.min(...matchingSrc.map(c => c.start));
+      const srcEnd = Math.max(...matchingSrc.map(c => c.end));
 
-      for (const tr of officialTurkishCues) {
-        // Discard any Turkish cue that already ended before current playback
-        if (tr.end < now - 0.2) continue;
+      // Find all Turkish cues corresponding to this active dialogue span
+      const matchingTr = officialTurkishCues.filter(tr => {
+        const overlapStart = Math.max(srcStart, tr.start);
+        const overlapEnd = Math.min(srcEnd, tr.end);
+        const overlap = Math.max(0, overlapEnd - overlapStart);
+        const trDur = Math.max(0.2, tr.end - tr.start);
+        const trMid = (tr.start + tr.end) / 2;
+        return (overlap / trDur >= 0.35 || overlap >= 0.6) && trMid >= (srcStart - 0.3) && trMid <= (srcEnd + 0.3);
+      }).sort((a, b) => a.start - b.start);
 
-        const overlapStart = Math.max(srcCue.start, tr.start);
-        const overlapEnd = Math.min(srcCue.end, tr.end);
-        const overlap = overlapEnd - overlapStart;
-
-        if (overlap > maxOverlap) {
-          maxOverlap = overlap;
-          bestTr = tr;
-        }
-      }
-
-      if (bestTr && maxOverlap > 0.3) {
-        // Find any companion lines belonging to the same subtitle card:
-        // Companion lines must be currently active (not in the past), and share end/start times
-        const companionLines = officialTurkishCues.filter(c =>
-          c.end >= now - 0.2 &&
-          (c === bestTr || (
-            Math.abs(c.end - bestTr.end) <= 0.6 &&
-            Math.abs(c.start - bestTr.start) <= 0.55
-          ))
-        ).sort((a, b) => a.start - b.start);
-
-        if (companionLines.length > 1) {
-          const seen = new Set();
-          const parts = [];
-          for (const line of companionLines) {
-            if (!seen.has(line.text)) {
-              seen.add(line.text);
-              parts.push(line.text);
-            }
+      if (matchingTr.length > 0) {
+        const seen = new Set();
+        const parts = [];
+        for (const t of matchingTr) {
+          if (!seen.has(t.text)) {
+            seen.add(t.text);
+            parts.push(t.text);
           }
-          return parts.join(' ');
         }
-        return bestTr.text;
+        return parts.join(' ');
       }
     }
   }
 
-  // 2. Direct time-based match: Turkish cue active strictly at current playback clock
+  // 2. Direct time-based match at current playback clock (Fallback when source cues didn't intercept)
   const activeTrCues = officialTurkishCues.filter(c =>
-    c.start <= (now + 0.2) && c.end >= (now - 0.2)
+    c.start <= (now + 0.15) && (now - 0.15) <= c.end
   );
 
   if (activeTrCues.length > 0) {
-    // If multiple cues match, choose the primary one that ends latest (current dialogue card, NEVER past!)
-    activeTrCues.sort((a, b) => b.end - a.end);
-    const primaryCue = activeTrCues[0];
-
-    // Only join cues belonging to this same dialogue card (end close to each other, start close)
-    const cardLines = activeTrCues.filter(c =>
-      c === primaryCue || (
-        Math.abs(c.end - primaryCue.end) <= 0.6 &&
-        Math.abs(c.start - primaryCue.start) <= 0.55
-      )
-    ).sort((a, b) => a.start - b.start);
-
+    activeTrCues.sort((a, b) => a.start - b.start);
     const seen = new Set();
     const parts = [];
-    for (const l of cardLines) {
+    for (const l of activeTrCues) {
       if (!seen.has(l.text)) {
         seen.add(l.text);
         parts.push(l.text);
@@ -1349,17 +1309,20 @@ function showSubBar(sentence, anchorRect, isDual = false) {
   const textEl = subBar.querySelector('.ydh-sub-text');
   const container = getAppRoot();
 
-  // If already displaying this exact sentence, just re-verify position
+  const video = document.querySelector('video');
+  const officialTr = getOfficialTurkishTranslation(sentence, video?.currentTime);
+
+  // If already displaying this exact sentence, verify position and check if official translation became available
   if (currentSubSentence === sentence && subBar.classList.contains('ydh-sub-visible')) {
-    updateSubBarPosition(subBar, anchorRect, container);
-    return;
+    if (!officialTr || textEl.textContent === officialTr) {
+      updateSubBarPosition(subBar, anchorRect, container);
+      return;
+    }
   }
 
   currentSubSentence = sentence;
 
   // 1. Prime Video / Platform's Official Turkish Track FIRST (Instant 0ms cinema translation!)
-  const video = document.querySelector('video');
-  const officialTr = getOfficialTurkishTranslation(sentence, video?.currentTime);
   if (officialTr) {
     textEl.textContent = officialTr;
     textEl.classList.remove('ydh-sub-loading');
