@@ -676,11 +676,18 @@ function findActiveSubtitleCue() {
     // Sort in visual reading order (top to bottom)
     nonRedundant.sort((a, b) => a.rect.top - b.rect.top);
 
-    // De-duplicate lines
+    // De-duplicate lines cleanly
     const uniqueLines = [];
     for (const item of nonRedundant) {
-      const isDup = uniqueLines.some(u => u.text === item.text || u.text.includes(item.text));
-      if (!isDup) uniqueLines.push(item);
+      const covered = uniqueLines.some(u => u.text === item.text || u.text.includes(item.text));
+      if (!covered) {
+        const existingIdx = uniqueLines.findIndex(u => item.text.includes(u.text));
+        if (existingIdx !== -1) {
+          uniqueLines[existingIdx] = item;
+        } else {
+          uniqueLines.push(item);
+        }
+      }
     }
 
     if (uniqueLines.length > 0) {
@@ -979,11 +986,24 @@ function cleanAndMergeCues(rawCues) {
       continue;
     }
     const last = merged[merged.length - 1];
-    // Merge only if cues share the exact same start time (simultaneous multi-line subtitle on Prime Video / Netflix)
-    if (Math.abs(cue.start - last.start) <= 0.12) {
+
+    // Check if cue and last are two lines of the same simultaneous dialogue card:
+    // They end at virtually the same time (within 0.6s) AND start within 0.55s of each other,
+    // OR they overlap for the vast majority of their display time (>= 60% of the shorter line).
+    // Sequential dialogue lines (e.g. a previous sentence) end several seconds apart and are never merged.
+    const overlapStart = Math.max(cue.start, last.start);
+    const overlapEnd = Math.min(cue.end, last.end);
+    const overlap = Math.max(0, overlapEnd - overlapStart);
+    const minDur = Math.min(cue.end - cue.start, last.end - last.start);
+    const isSameSubtitleCard =
+      (Math.abs(cue.end - last.end) <= 0.6 && Math.abs(cue.start - last.start) <= 0.55) ||
+      (minDur > 0.4 && (overlap / minDur) >= 0.6);
+
+    if (isSameSubtitleCard) {
       if (!last.text.includes(cleanText)) {
         last.text = `${last.text} ${cleanText}`.trim();
       }
+      last.start = Math.min(last.start, cue.start);
       last.end = Math.max(last.end, cue.end);
     } else if (cleanText === last.text && Math.abs(cue.start - last.end) <= 0.3) {
       last.end = Math.max(last.end, cue.end);
@@ -1147,9 +1167,9 @@ function getOfficialTurkishTranslation(sentence, videoTime) {
     const cleanSentence = (sentence || '').replace(/\s+/g, ' ').trim();
     // Match the English cue truly active at current video playback
     const srcCue = preloadedSourceCues.find(c =>
-      (c.start - 0.2) <= now && now <= (c.end + 0.2) &&
+      (c.start - 0.25) <= now && now <= (c.end + 0.25) &&
       (c.text === cleanSentence || cleanSentence.includes(c.text) || c.text.includes(cleanSentence))
-    ) || preloadedSourceCues.find(c => (c.start - 0.15) <= now && now <= (c.end + 0.15));
+    ) || preloadedSourceCues.find(c => (c.start - 0.2) <= now && now <= (c.end + 0.2));
 
     if (srcCue) {
       let bestTr = null;
@@ -1157,7 +1177,7 @@ function getOfficialTurkishTranslation(sentence, videoTime) {
 
       for (const tr of officialTurkishCues) {
         // Discard any Turkish cue that already ended before current playback
-        if (tr.end < now - 0.25) continue;
+        if (tr.end < now - 0.2) continue;
 
         const overlapStart = Math.max(srcCue.start, tr.start);
         const overlapEnd = Math.min(srcCue.end, tr.end);
@@ -1170,13 +1190,26 @@ function getOfficialTurkishTranslation(sentence, videoTime) {
       }
 
       if (bestTr && maxOverlap > 0.3) {
-        // Only include simultaneous multi-line cues sharing the exact same start time
-        const simultaneous = officialTurkishCues.filter(c =>
-          Math.abs(c.start - bestTr.start) <= 0.12 &&
-          Math.abs(c.end - bestTr.end) <= 0.5
-        );
-        if (simultaneous.length > 1) {
-          return simultaneous.map(c => c.text).join(' ');
+        // Find any companion lines belonging to the same subtitle card:
+        // Companion lines must be currently active (not in the past), and share end/start times
+        const companionLines = officialTurkishCues.filter(c =>
+          c.end >= now - 0.2 &&
+          (c === bestTr || (
+            Math.abs(c.end - bestTr.end) <= 0.6 &&
+            Math.abs(c.start - bestTr.start) <= 0.55
+          ))
+        ).sort((a, b) => a.start - b.start);
+
+        if (companionLines.length > 1) {
+          const seen = new Set();
+          const parts = [];
+          for (const line of companionLines) {
+            if (!seen.has(line.text)) {
+              seen.add(line.text);
+              parts.push(line.text);
+            }
+          }
+          return parts.join(' ');
         }
         return bestTr.text;
       }
@@ -1185,17 +1218,31 @@ function getOfficialTurkishTranslation(sentence, videoTime) {
 
   // 2. Direct time-based match: Turkish cue active strictly at current playback clock
   const activeTrCues = officialTurkishCues.filter(c =>
-    c.start <= (now + 0.15) && (now - 0.15) <= c.end
+    c.start <= (now + 0.2) && c.end >= (now - 0.2)
   );
 
   if (activeTrCues.length > 0) {
-    // If multiple cues match, choose the one that started latest (current dialogue, NEVER the past!)
-    activeTrCues.sort((a, b) => b.start - a.start);
-    const latestStart = activeTrCues[0].start;
+    // If multiple cues match, choose the primary one that ends latest (current dialogue card, NEVER past!)
+    activeTrCues.sort((a, b) => b.end - a.end);
+    const primaryCue = activeTrCues[0];
 
-    // Only join if cues started at the exact same moment (simultaneous lines)
-    const currentLines = activeTrCues.filter(c => Math.abs(c.start - latestStart) <= 0.12);
-    return currentLines.map(c => c.text).join(' ');
+    // Only join cues belonging to this same dialogue card (end close to each other, start close)
+    const cardLines = activeTrCues.filter(c =>
+      c === primaryCue || (
+        Math.abs(c.end - primaryCue.end) <= 0.6 &&
+        Math.abs(c.start - primaryCue.start) <= 0.55
+      )
+    ).sort((a, b) => a.start - b.start);
+
+    const seen = new Set();
+    const parts = [];
+    for (const l of cardLines) {
+      if (!seen.has(l.text)) {
+        seen.add(l.text);
+        parts.push(l.text);
+      }
+    }
+    return parts.join(' ');
   }
 
   return null;

@@ -87,8 +87,11 @@ const steps = [
             🧩
           </div>
           <div className="flex-1 text-center sm:text-left">
-            <p className="font-bold text-white text-sm">enesglish-extension.zip</p>
-            <p className="text-xs text-slate-400 mt-0.5">Chrome Eklentisi — Tüm dosyalar dahil</p>
+            <div className="flex items-center gap-2 justify-center sm:justify-start">
+              <p className="font-bold text-white text-sm">enesglish-extension.zip</p>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">v1.1.0 Güncel</span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">Chrome Eklentisi — Son güncellemeler ve tüm dosyalar dahil</p>
           </div>
           <a
             href={EXT_ZIP_URL}
