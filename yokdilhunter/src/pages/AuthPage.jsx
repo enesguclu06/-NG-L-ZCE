@@ -1,10 +1,12 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { Toast, useToast } from '../components/Toast'
 
 export default function AuthPage() {
-  const [mode, setMode] = useState('login') // 'login' | 'signup'
+  const [searchParams] = useSearchParams()
+  const initialMode = searchParams.get('mode') === 'signup' ? 'signup' : 'login'
+  const [mode, setMode] = useState(initialMode) // 'login' | 'signup' | 'forgot_password'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -14,6 +16,14 @@ export default function AuthPage() {
   const { signIn, signUp, resetPassword } = useAuth()
   const navigate = useNavigate()
   const { toast, showToast, clearToast } = useToast()
+
+  // Sync mode if query parameter changes
+  useEffect(() => {
+    const urlMode = searchParams.get('mode')
+    if (urlMode === 'signup' || urlMode === 'login') {
+      setMode(urlMode)
+    }
+  }, [searchParams])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -68,7 +78,7 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-dvh flex flex-col bg-base-900 overflow-hidden">
+    <div className="min-h-dvh flex flex-col bg-base-900 overflow-hidden" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <Toast {...toast} onClose={clearToast} />
 
       {/* ── Background decoration ── */}
@@ -79,6 +89,17 @@ export default function AuthPage() {
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-12 relative z-10">
+        {/* ── Back to Landing Page ── */}
+        <div className="w-full max-w-sm mb-4">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-white transition-colors group"
+          >
+            <span className="transition-transform group-hover:-translate-x-1">←</span>
+            <span>Tanıtım & Özellikler Sayfasına Dön</span>
+          </Link>
+        </div>
+
         {/* ── Hero ── */}
         <div className="text-center mb-10 animate-fade-up">
           <div className="w-20 h-20 mx-auto mb-5 rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-fuchsia-500 flex items-center justify-center shadow-glow-primary border border-white/20">

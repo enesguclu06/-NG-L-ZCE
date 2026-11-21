@@ -3,12 +3,14 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { supabase } from './lib/supabase'
 import { useAuthStore } from './store/authStore'
 import { Layout } from './components/layout/Layout'
+import LandingPage from './pages/LandingPage'
 import AuthPage from './pages/AuthPage'
 import AddWordPage from './pages/AddWordPage'
 import LibraryPage from './pages/LibraryPage'
 import ReviewPage from './pages/ReviewPage'
 import DashboardPage from './pages/DashboardPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
+import ExtensionGuidePage from './pages/ExtensionGuidePage'
 
 /**
  * Listens for Supabase auth events (like PASSWORD_RECOVERY) and handles routing.
@@ -77,7 +79,14 @@ export default function App() {
     <BrowserRouter>
       <AuthRedirector />
       <Routes>
-        {/* Public */}
+        {/* Public Landing & Showcase */}
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/welcome" element={<LandingPage />} />
+        <Route path="/tanitim" element={<LandingPage />} />
+        <Route path="/eklenti" element={<ExtensionGuidePage />} />
+        <Route path="/extension" element={<ExtensionGuidePage />} />
+
+        {/* Auth */}
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
 
@@ -115,9 +124,8 @@ export default function App() {
           }
         />
 
-        {/* Default redirect */}
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        {/* Fallback route */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   )

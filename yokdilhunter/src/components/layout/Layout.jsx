@@ -12,6 +12,7 @@ import {
   StreakShieldUsedModal,
   StreakLostModal
 } from '../streak/StreakModal'
+import { TutorialModal } from '../tutorial/TutorialModal'
 
 export function Layout({ children }) {
   const { signOut, user } = useAuth()
@@ -19,6 +20,7 @@ export function Layout({ children }) {
   const [showAiModal, setShowAiModal] = useState(false)
   const [showStreakModal, setShowStreakModal] = useState(false)
   const [showNotificationModal, setShowNotificationModal] = useState(false)
+  const [showTutorialModal, setShowTutorialModal] = useState(false)
   const hasGemini = !!getGeminiApiKey()
   const streak = useStreak()
 
@@ -34,7 +36,7 @@ export function Layout({ children }) {
   return (
     <div className="min-h-dvh flex flex-col bg-base-900">
       {/* ── Top Bar ── */}
-      <header className="sticky top-0 z-30 bg-base-900/80 backdrop-blur-md border-b border-white/[0.06]">
+      <header className="sticky top-0 z-30 bg-base-900/80 backdrop-blur-md border-b border-white/[0.06] safe-top">
         <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto w-full">
           {/* Logo */}
           <div className="flex items-center gap-2.5">
@@ -46,6 +48,15 @@ export function Layout({ children }) {
 
           {/* Right side */}
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Tutorial Guide Trigger */}
+            <button
+              onClick={() => setShowTutorialModal(true)}
+              className="flex items-center gap-1 p-2 rounded-lg text-xs font-medium transition-all bg-white/5 text-sky-300 hover:text-sky-200 hover:bg-white/10 border border-white/5"
+              title="Nasıl Kullanılır? Canlı Öğretici Rehber"
+            >
+              <span className="text-sm">💡</span>
+            </button>
+
             {/* Notification Reminder Trigger */}
             <button
               onClick={() => setShowNotificationModal(true)}
@@ -122,6 +133,12 @@ export function Layout({ children }) {
 
       {/* ── AI Settings Modal ── */}
       <AiSettingsModal isOpen={showAiModal} onClose={() => setShowAiModal(false)} />
+
+      {/* ── Tutorial Guide Modal ── */}
+      <TutorialModal
+        isOpen={showTutorialModal}
+        onClose={() => setShowTutorialModal(false)}
+      />
 
       {/* ── Daily Streak Modal ── */}
       <StreakModal

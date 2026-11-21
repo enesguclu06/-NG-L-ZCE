@@ -230,7 +230,7 @@ export function reconcileStreakWithCloud(userId, cloudState, wordsData = []) {
   const bestStreak = Math.max(local.bestStreak || 0, cloud.bestStreak || 0)
 
   // 2. Authoritative Recovery Shield (Freeze) Used Timestamp
-  const lastFreezeUsedAt = Math.max(
+  let lastFreezeUsedAt = Math.max(
     Number(local.lastFreezeUsedAt) || 0,
     Number(cloud.lastFreezeUsedAt) || 0
   ) || null

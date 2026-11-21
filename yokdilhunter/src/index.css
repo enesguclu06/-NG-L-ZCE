@@ -123,3 +123,9 @@ body {
 
 /* ── Safe area padding for bottom nav ─────────────────────────── */
 .pb-nav { padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 1rem); }
+
+/* ── Safe area insets for header / notch / Dynamic Island ───────────── */
+/* Pushes sticky top bars below iPhone notch & Dynamic Island */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}

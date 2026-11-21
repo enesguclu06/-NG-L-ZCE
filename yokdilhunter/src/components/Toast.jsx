@@ -19,7 +19,11 @@ export function Toast({ message, type = 'info', onClose, duration = 3000 }) {
   const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ'
 
   return createPortal(
-    <div className={`toast ${cls}`} role="alert">
+    <div
+      className={`toast ${cls}`}
+      role="alert"
+      style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1rem)' }}
+    >
       <span className="mr-2 font-bold">{icon}</span>
       {message}
     </div>,
