@@ -16,7 +16,7 @@ self.addEventListener('push', function (event) {
     icon: data.icon || '/favicon.svg',
     badge: data.badge || '/favicon.svg',
     vibrate: [200, 100, 200],
-    tag: 'enesglish-daily-reminder',
+    tag: data.tag || 'enesglish-daily-reminder',
     renotify: true,
     data: data.data || { url: '/review' },
     actions: [

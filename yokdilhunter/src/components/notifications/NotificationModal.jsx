@@ -89,22 +89,14 @@ export function NotificationModal({ isOpen, onClose }) {
           </div>
           <div>
             <h3 className="text-lg font-bold text-white leading-tight">Kelime Hatırlatıcı</h3>
-            <p className="text-xs text-slate-400">Günde 2 kez telefon bildirimi</p>
+            <p className="text-xs text-slate-400">Akıllı hatırlatıcılar & streak koruması</p>
           </div>
         </div>
 
         {/* Schedule Info Box */}
-        <div className="p-3.5 rounded-xl bg-base-900/60 border border-white/5 mb-4 space-y-2">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-400 flex items-center gap-1.5 font-medium">
-              <span>⏰</span> Hatırlatma Saatleri:
-            </span>
-            <span className="font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
-              10:00 & 22:00
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-400 flex items-center gap-1.5 font-medium">
+        <div className="p-3.5 rounded-xl bg-base-900/60 border border-white/5 mb-4 space-y-2.5">
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+            <span className="flex items-center gap-1.5 text-slate-400">
               <span>📱</span> Bildirim Durumu:
             </span>
             <span
@@ -118,6 +110,33 @@ export function NotificationModal({ isOpen, onClose }) {
             >
               {isSubscribed ? 'Aktif (Açık) ✅' : permission === 'denied' ? 'Engellendi 🚫' : 'Kapalı 🔕'}
             </span>
+          </div>
+
+          <div className="space-y-1.5 pt-2 border-t border-white/5 text-[11px]">
+            <div className="flex items-center justify-between text-slate-300">
+              <span className="flex items-center gap-1.5 text-slate-400">
+                <span>☀️</span> 10:00 — Sabah Kelimeleri
+              </span>
+              <span className="text-amber-300 font-medium bg-amber-500/10 px-1.5 py-0.5 rounded text-[10px] border border-amber-500/20">
+                Genel Tekrar
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-slate-300">
+              <span className="flex items-center gap-1.5 text-slate-400">
+                <span>🌙</span> 22:00 — Akşam Tekrarı
+              </span>
+              <span className="text-amber-300 font-medium bg-amber-500/10 px-1.5 py-0.5 rounded text-[10px] border border-amber-500/20">
+                Genel Tekrar
+              </span>
+            </div>
+            <div className="flex items-center justify-between bg-orange-500/10 -mx-1 px-2 py-1 rounded-lg border border-orange-500/20">
+              <span className="flex items-center gap-1.5 text-orange-300 font-semibold">
+                <span>🔥</span> 23:00 — Acil Streak Koruması
+              </span>
+              <span className="text-[10px] text-orange-200 bg-orange-500/20 px-1.5 py-0.5 rounded font-bold">
+                Yalnızca Tekrar Yapmayanlara
+              </span>
+            </div>
           </div>
         </div>
 
@@ -176,7 +195,7 @@ export function NotificationModal({ isOpen, onClose }) {
               </>
             ) : (
               <>
-                <span>🔔</span> Bildirimleri Aç (10:00 & 22:00)
+                <span>🔔</span> Bildirimleri Aç
               </>
             )}
           </button>

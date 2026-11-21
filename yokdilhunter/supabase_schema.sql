@@ -123,6 +123,56 @@ $$;
 
 grant execute on function delete_expired_push_subscriptions to anon, authenticated, service_role;
 
+-- Streak-Aware Push Subscriptions RPC Function (Gece 23:00 Acil Bildirimleri İçin)
+create or replace function get_all_push_subscriptions_with_streak(p_today text default to_char(now() at time zone 'Europe/Istanbul', 'YYYY-MM-DD'))
+returns table (
+  id uuid,
+  user_id uuid,
+  endpoint text,
+  p256dh text,
+  auth text,
+  user_agent text,
+  created_at timestamptz,
+  updated_at timestamptz,
+  today_count int,
+  last_completed_date text,
+  current_streak int,
+  completed_today boolean
+)
+language sql
+security definer
+set search_path = public, auth
+as $$
+  select
+    s.id,
+    s.user_id,
+    s.endpoint,
+    s.p256dh,
+    s.auth,
+    s.user_agent,
+    s.created_at,
+    s.updated_at,
+    coalesce((u.raw_user_meta_data->'streak_data'->>'todayCount')::int, 0) as today_count,
+    u.raw_user_meta_data->'streak_data'->>'lastCompletedDate' as last_completed_date,
+    coalesce((u.raw_user_meta_data->'streak_data'->>'currentStreak')::int, 0) as current_streak,
+    (
+      (u.raw_user_meta_data->'streak_data'->>'lastCompletedDate' = p_today)
+      or coalesce((u.raw_user_meta_data->'streak_data'->>'todayCount')::int, 0) >= 10
+      or exists (
+        select 1 from public.words w
+        where w.user_id = s.user_id
+          and to_char(w.last_reviewed_at at time zone 'Europe/Istanbul', 'YYYY-MM-DD') = p_today
+        group by w.user_id
+        having count(w.id) >= 10
+      )
+    ) as completed_today
+  from public.push_subscriptions s
+  left join auth.users u on u.id = s.user_id;
+$$;
+
+grant execute on function get_all_push_subscriptions_with_streak to anon, authenticated, service_role;
+
+
 -- ── Review Sessions Table (Tamamlanan Oturumlar) ──────────────
 create table if not exists public.review_sessions (
   id              uuid        primary key default gen_random_uuid(),
