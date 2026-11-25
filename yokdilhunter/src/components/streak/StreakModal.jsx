@@ -1,15 +1,7 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { manualSetStreak } from '../../lib/streak'
-import { useAuthStore } from '../../store/authStore'
 
 export function StreakModal({ isOpen, onClose, streak }) {
   const navigate = useNavigate()
-  const user = useAuthStore(s => s.user)
-  const [showEdit, setShowEdit] = useState(false)
-  const [customStreak, setCustomStreak] = useState(streak?.bestStreak || streak?.currentStreak || 5)
-  const [saving, setSaving] = useState(false)
-
   if (!isOpen || !streak) return null
 
   const {
@@ -26,21 +18,6 @@ export function StreakModal({ isOpen, onClose, streak }) {
   } = streak
 
   const remaining = Math.max(0, target - todayCount)
-
-  const handleManualSave = async () => {
-    setSaving(true)
-    try {
-      const num = Math.max(1, parseInt(customStreak, 10) || 1)
-      if (window.setStreak) {
-        await window.setStreak(num, true)
-      } else {
-        await manualSetStreak(user?.id, num, true)
-      }
-      setShowEdit(false)
-    } finally {
-      setSaving(false)
-    }
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
@@ -172,57 +149,6 @@ export function StreakModal({ isOpen, onClose, streak }) {
           <span>🔥</span>
           <span>{isCompletedToday ? 'Tekrarlara Devam Et' : 'Hemen Tekrar Et ve Seriyi Koru'}</span>
         </button>
-
-        {/* ── Manual Streak Restore / Edit Drawer ── */}
-        <div className="mt-3 pt-3 border-t border-white/5 text-center">
-          {!showEdit ? (
-            <button
-              type="button"
-              onClick={() => setShowEdit(true)}
-              className="text-[11px] text-slate-500 hover:text-amber-400 transition-colors flex items-center justify-center gap-1.5 mx-auto py-1"
-            >
-              <span>⚡</span>
-              <span>Serin haksız yere mi sıfırlandı? Kurtarmak için tıkla</span>
-            </button>
-          ) : (
-            <div className="bg-base-900/95 border border-amber-500/25 rounded-2xl p-3 animate-fade-in text-left">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <span>🔥</span> Serini Kurtar / Ayarla
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowEdit(false)}
-                  className="text-slate-500 hover:text-white text-xs p-1"
-                >
-                  ✕
-                </button>
-              </div>
-              <p className="text-[11px] text-slate-400 mb-2.5 leading-relaxed">
-                Kaç günlük serin vardı? Sayıyı girip kaydettiğinde serin ve kurtarma kalkanın anında geri yüklenir.
-              </p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="1"
-                  max="999"
-                  value={customStreak}
-                  onChange={(e) => setCustomStreak(e.target.value)}
-                  placeholder="10"
-                  className="w-20 bg-base-800 border border-white/15 rounded-xl px-2.5 py-1.5 text-sm text-white font-black text-center focus:outline-none focus:border-amber-500"
-                />
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={handleManualSave}
-                  className="flex-1 py-1.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs transition-all flex items-center justify-center gap-1 shadow-sm active:scale-95 disabled:opacity-50"
-                >
-                  {saving ? 'Kaydediliyor...' : '✓ Seriyi Geri Yükle'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
     </div>
   )
@@ -346,31 +272,9 @@ export function StreakShieldUsedModal({ isOpen, onClose, currentStreak }) {
 /**
  * Animated modal when user opens the site and their streak was reset because yesterday was missed
  */
-export function StreakLostModal({ isOpen, onClose, lostStreak, onRestore }) {
+export function StreakLostModal({ isOpen, onClose, lostStreak }) {
   const navigate = useNavigate()
-  const user = useAuthStore(s => s.user)
-  const [restoring, setRestoring] = useState(false)
-  const [showInput, setShowInput] = useState(false)
-  const [restoreDays, setRestoreDays] = useState(lostStreak > 0 ? lostStreak : 7)
-
   if (!isOpen) return null
-
-  const handleRestore = async (days) => {
-    setRestoring(true)
-    try {
-      const num = Math.max(1, parseInt(days, 10) || 1)
-      if (onRestore) {
-        await onRestore(num)
-      } else if (window.setStreak) {
-        await window.setStreak(num, true)
-      } else {
-        await manualSetStreak(user?.id, num, true)
-      }
-      onClose()
-    } finally {
-      setRestoring(false)
-    }
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
@@ -417,73 +321,17 @@ export function StreakLostModal({ isOpen, onClose, lostStreak, onRestore }) {
           </p>
         </div>
 
-        {/* Action Buttons */}
-        <div className="space-y-2.5">
-          {!showInput ? (
-            <>
-              {/* 1-Click Instant Restore */}
-              <button
-                disabled={restoring}
-                onClick={() => handleRestore(lostStreak > 0 ? lostStreak : restoreDays)}
-                className="w-full py-3 rounded-xl font-black text-sm bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-lg shadow-emerald-500/25 transition-all duration-200 active:scale-98 flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                <span>⚡</span>
-                <span>{restoring ? 'Kurtarılıyor...' : (lostStreak > 0 ? `${lostStreak} Günlük Serimi Geri Kurtar` : 'Eski Serimi Geri Kurtar')}</span>
-              </button>
-
-              <div className="flex items-center justify-between text-xs px-1">
-                <button
-                  type="button"
-                  onClick={() => setShowInput(true)}
-                  className="text-[11px] text-slate-400 hover:text-white underline underline-offset-2"
-                >
-                  Farklı bir gün sayısı gir
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose()
-                    navigate('/review')
-                  }}
-                  className="text-[11px] text-slate-500 hover:text-slate-300"
-                >
-                  Sıfırdan başla →
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="bg-base-950 border border-emerald-500/30 rounded-2xl p-3 text-left animate-fade-in">
-              <p className="text-xs font-bold text-white mb-1.5 flex items-center gap-1.5">
-                <span>🔥</span> Kaç günlük serin vardı?
-              </p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="1"
-                  max="999"
-                  value={restoreDays}
-                  onChange={(e) => setRestoreDays(e.target.value)}
-                  className="w-20 bg-base-800 border border-white/15 rounded-xl px-2.5 py-1.5 text-sm text-white font-black text-center focus:outline-none focus:border-emerald-500"
-                />
-                <button
-                  type="button"
-                  disabled={restoring}
-                  onClick={() => handleRestore(restoreDays)}
-                  className="flex-1 py-1.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all flex items-center justify-center gap-1 disabled:opacity-50"
-                >
-                  {restoring ? 'Kurtarılıyor...' : '✓ Seriyi Kurtar'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowInput(false)}
-                  className="px-2 text-xs text-slate-500 hover:text-white"
-                >
-                  İptal
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        {/* CTA Button */}
+        <button
+          onClick={() => {
+            onClose()
+            navigate('/review')
+          }}
+          className="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white shadow-glow-orange transition-all duration-200 active:scale-98 flex items-center justify-center gap-2"
+        >
+          <span>🚀</span>
+          <span>Hemen Yeni Bir Seri Başlat</span>
+        </button>
       </div>
     </div>
   )

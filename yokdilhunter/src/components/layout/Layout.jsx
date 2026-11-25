@@ -175,12 +175,6 @@ export function Layout({ children }) {
         isOpen={!!streak.streakLostNotice}
         onClose={streak.dismissLostNotice}
         lostStreak={streak.lostStreakCount}
-        onRestore={async (count) => {
-          if (window.setStreak) {
-            await window.setStreak(count, true)
-          }
-          streak.dismissLostNotice()
-        }}
       />
 
       {/* ── Bottom Nav ── */}
